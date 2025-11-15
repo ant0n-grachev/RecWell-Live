@@ -2,6 +2,8 @@
 
 A lightweight Progressive Web App that surfaces real-time occupancy for the University of Wisconsin-Madison RecWell facilities (Nick and Bakke). The UI focuses on at-a-glance capacity signals, mobile-first ergonomics, and installability so you can pin the dashboard to your phone like a native app.
 
+<img width="800" height="710" alt="Screenshot 2025-11-14 at 11 49 13 PM" src="https://github.com/user-attachments/assets/e4fa53d7-5582-450f-861b-d461a51a0937" />
+
 ## Key features
 
 - **Live occupancy feed**: Fetches the public RecWell endpoint on demand with abort-safe requests so stale data never flashes.
