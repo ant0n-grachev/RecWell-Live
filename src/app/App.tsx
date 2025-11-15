@@ -8,6 +8,7 @@ import {
     Link,
     IconButton,
     Tooltip,
+    Stack,
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import FacilitySelector from "../features/facilities/components/FacilitySelector";
@@ -265,17 +266,22 @@ export default function App() {
                                     locations={data.locations}
                                 />
 
-                                <SectionSummary
-                                    title="👟 Running Track"
-                                    ids={NICK_TRACK}
-                                    locations={data.locations}
-                                />
-
-                                <SectionSummary
-                                    title="🏊‍♀️ Swimming Pool"
-                                    ids={NICK_POOL}
-                                    locations={data.locations}
-                                />
+                                <Stack direction={{xs: "column", sm: "row"}} spacing={2}>
+                                    <Box sx={{flex: 1}}>
+                                        <SectionSummary
+                                            title="👟 Running Track"
+                                            ids={NICK_TRACK}
+                                            locations={data.locations}
+                                        />
+                                    </Box>
+                                    <Box sx={{flex: 1}}>
+                                        <SectionSummary
+                                            title="🏊‍♀️ Swimming Pool"
+                                            ids={NICK_POOL}
+                                            locations={data.locations}
+                                        />
+                                    </Box>
+                                </Stack>
 
                                 <SectionSummary
                                     title="🎾 Racquetball Courts"
@@ -299,29 +305,39 @@ export default function App() {
                                     locations={data.locations}
                                 />
 
-                                <SectionSummary
-                                    title="👟 Running Track"
-                                    ids={BAKKE_TRACK}
-                                    locations={data.locations}
-                                />
+                                <Stack direction={{xs: "column", sm: "row"}} spacing={2}>
+                                    <Box sx={{flex: 1}}>
+                                        <SectionSummary
+                                            title="👟 Running Track"
+                                            ids={BAKKE_TRACK}
+                                            locations={data.locations}
+                                        />
+                                    </Box>
+                                    <Box sx={{flex: 1}}>
+                                        <SectionSummary
+                                            title="🏊‍♂️ Swimming Pool"
+                                            ids={BAKKE_POOL}
+                                            locations={data.locations}
+                                        />
+                                    </Box>
+                                </Stack>
 
-                                <SectionSummary
-                                    title="🏊‍♂️ Swimming Pool"
-                                    ids={BAKKE_POOL}
-                                    locations={data.locations}
-                                />
-
-                                <SectionSummary
-                                    title="🧗 Rock Climbing"
-                                    ids={BAKKE_MENDOTA}
-                                    locations={data.locations}
-                                />
-
-                                <SectionSummary
-                                    title="🧊 Ice Skating"
-                                    ids={BAKKE_ICE}
-                                    locations={data.locations}
-                                />
+                                <Stack direction={{xs: "column", sm: "row"}} spacing={2}>
+                                    <Box sx={{flex: 1}}>
+                                        <SectionSummary
+                                            title="🧗 Rock Climbing"
+                                            ids={BAKKE_MENDOTA}
+                                            locations={data.locations}
+                                        />
+                                    </Box>
+                                    <Box sx={{flex: 1}}>
+                                        <SectionSummary
+                                            title="🧊 Ice Skating"
+                                            ids={BAKKE_ICE}
+                                            locations={data.locations}
+                                        />
+                                    </Box>
+                                </Stack>
 
                                 <SectionSummaryOther
                                     title="🧩 Other Facilities"
