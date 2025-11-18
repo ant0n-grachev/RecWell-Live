@@ -181,15 +181,6 @@ export default function App() {
         ? new Date(lastUpdated).toLocaleString([], {hour: "numeric", minute: "2-digit", month: "short", day: "numeric"})
         : null;
 
-    const hasDataFor = (ids: number[]) => data?.locations.some((l) => ids.includes(l.locationId));
-
-    const renderCard = (title: string, ids: number[]) =>
-        hasDataFor(ids) ? (
-            <Box sx={{flex: 1, minWidth: 0}}>
-                <SectionSummary title={title} ids={ids} locations={data!.locations}/>
-            </Box>
-        ) : null;
-
     return (
         <Box sx={{py: {xs: 2, sm: 3}, bgcolor: "background.default", minHeight: "100vh"}}>
             <Container
@@ -277,15 +268,15 @@ export default function App() {
                                     locations={data.locations}
                                 />
 
-                                <Stack direction={{xs: "column", sm: "row"}} spacing={2}>
-                                    <Box sx={{flex: 1}}>
+                                <Stack direction={{xs: "column", sm: "row"}} spacing={2} alignItems="stretch">
+                                    <Box sx={{flex: 1, minWidth: 0}}>
                                         <SectionSummary
                                             title="👟 Running Track"
                                             ids={NICK_TRACK}
                                             locations={data.locations}
                                         />
                                     </Box>
-                                    <Box sx={{flex: 1}}>
+                                    <Box sx={{flex: 1, minWidth: 0}}>
                                         <SectionSummary
                                             title="🏊‍♀️ Swimming Pool"
                                             ids={NICK_POOL}
@@ -316,32 +307,56 @@ export default function App() {
                                     locations={data.locations}
                                 />
 
-                                {[renderCard("👟 Running Track", BAKKE_TRACK), renderCard("🏊‍♂️ Swimming Pool", BAKKE_POOL)]
-                                    .filter(Boolean)
-                                    .length > 0 && (
-                                    <Stack direction={{xs: "column", sm: "row"}} spacing={2}>
-                                        {renderCard("👟 Running Track", BAKKE_TRACK)}
-                                        {renderCard("🏊‍♂️ Swimming Pool", BAKKE_POOL)}
-                                    </Stack>
-                                )}
+                                <Stack direction={{xs: "column", sm: "row"}} spacing={2} alignItems="stretch">
+                                    <Box sx={{flex: 1, minWidth: 0}}>
+                                        <SectionSummary
+                                            title="👟 Running Track"
+                                            ids={BAKKE_TRACK}
+                                            locations={data.locations}
+                                        />
+                                    </Box>
+                                    <Box sx={{flex: 1, minWidth: 0}}>
+                                        <SectionSummary
+                                            title="🏊‍♂️ Swimming Pool"
+                                            ids={BAKKE_POOL}
+                                            locations={data.locations}
+                                        />
+                                    </Box>
+                                </Stack>
 
-                                {[renderCard("🧗 Rock Climbing", BAKKE_MENDOTA), renderCard("🧊 Ice Skating", BAKKE_ICE)]
-                                    .filter(Boolean)
-                                    .length > 0 && (
-                                    <Stack direction={{xs: "column", sm: "row"}} spacing={2}>
-                                        {renderCard("🧗 Rock Climbing", BAKKE_MENDOTA)}
-                                        {renderCard("🧊 Ice Skating", BAKKE_ICE)}
-                                    </Stack>
-                                )}
+                                <Stack direction={{xs: "column", sm: "row"}} spacing={2} alignItems="stretch">
+                                    <Box sx={{flex: 1, minWidth: 0}}>
+                                        <SectionSummary
+                                            title="🧗 Rock Climbing"
+                                            ids={BAKKE_MENDOTA}
+                                            locations={data.locations}
+                                        />
+                                    </Box>
+                                    <Box sx={{flex: 1, minWidth: 0}}>
+                                        <SectionSummary
+                                            title="🧊 Ice Skating"
+                                            ids={BAKKE_ICE}
+                                            locations={data.locations}
+                                        />
+                                    </Box>
+                                </Stack>
 
-                                {[renderCard("🎮 Esports Room", BAKKE_ESPORTS), renderCard("⛳ Sports Simulators", BAKKE_SKYBOX)]
-                                    .filter(Boolean)
-                                    .length > 0 && (
-                                    <Stack direction={{xs: "column", sm: "row"}} spacing={2}>
-                                        {renderCard("🎮 Esports Room", BAKKE_ESPORTS)}
-                                        {renderCard("⛳ Sports Simulators", BAKKE_SKYBOX)}
-                                    </Stack>
-                                )}
+                                <Stack direction={{xs: "column", sm: "row"}} spacing={2} alignItems="stretch">
+                                    <Box sx={{flex: 1, minWidth: 0}}>
+                                        <SectionSummary
+                                            title="🎮 Esports Room"
+                                            ids={BAKKE_ESPORTS}
+                                            locations={data.locations}
+                                        />
+                                    </Box>
+                                    <Box sx={{flex: 1, minWidth: 0}}>
+                                        <SectionSummary
+                                            title="⛳ Sports Simulators"
+                                            ids={BAKKE_SKYBOX}
+                                            locations={data.locations}
+                                        />
+                                    </Box>
+                                </Stack>
 
                             </>
                         )}

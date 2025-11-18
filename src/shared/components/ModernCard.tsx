@@ -13,6 +13,8 @@ export default function ModernCard({children}: { children: ReactNode }) {
                 display: "flex",
                 flexDirection: "column",
                 gap: 1.25,
+                minHeight: 150,
+                height: "100%",
             }}
         >
             {children}

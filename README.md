@@ -15,8 +15,6 @@ A lightweight Progressive Web App that surfaces real-time occupancy for the Univ
 - **React 19 + TypeScript** for the component architecture
 - **Vite** tooling for fast dev/build cycles
 - **Material UI 7** for layout primitives and theming
-- **Axios** for API access
-- **Service Worker + Web Manifest** for PWA install support
 
 ## Getting Started
 
