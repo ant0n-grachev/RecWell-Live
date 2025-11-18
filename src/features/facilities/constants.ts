@@ -10,12 +10,5 @@ export const BAKKE_POOL = [8716];
 export const BAKKE_TRACK = [8694];
 export const BAKKE_MENDOTA = [8701];
 export const BAKKE_COURTS = [8720, 8714, 8698];
-
-export const BAKKE_ALL = [
-    ...BAKKE_FITNESS,
-    ...BAKKE_ICE,
-    ...BAKKE_POOL,
-    ...BAKKE_TRACK,
-    ...BAKKE_MENDOTA,
-    ...BAKKE_COURTS,
-];
+export const BAKKE_ESPORTS = [8712];
+export const BAKKE_SKYBOX = [8695];
