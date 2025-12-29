@@ -244,6 +244,7 @@ export default function App() {
                             total={total}
                             max={max}
                             lastUpdated={lastUpdated}
+                            facilityId={facility}
                         />
 
                         {freshness === "cached" && (
