@@ -8,6 +8,7 @@ interface Props {
     max: number;
     lastUpdated?: string | null;
     facilityId: 1186 | 1656;
+    isLoading: boolean;
 }
 
 const FACILITY_LINKS: Record<1186 | 1656, {label: string; href: string}> = {
@@ -15,7 +16,7 @@ const FACILITY_LINKS: Record<1186 | 1656, {label: string; href: string}> = {
     1656: {label: "Bakke", href: "https://recwell.wisc.edu/locations/bakke/"},
 };
 
-export default function OccupancyCard({title, total, max, lastUpdated, facilityId}: Props) {
+export default function OccupancyCard({title, total, max, lastUpdated, facilityId, isLoading}: Props) {
     const percent = clampPercent(max ? (total / max) * 100 : 0);
     const color = getOccupancyColor(percent);
     const facilityLink = FACILITY_LINKS[facilityId];
@@ -47,7 +48,7 @@ export default function OccupancyCard({title, total, max, lastUpdated, facilityI
         }
     }
 
-    const showStaleNotice = typeof daysAgo === "number" && daysAgo >= 1;
+    const showStaleNotice = !isLoading && typeof daysAgo === "number" && daysAgo >= 1;
 
     return (
         <ModernCard>
