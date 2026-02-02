@@ -1,14 +1,11 @@
-import type {FacilityPayload} from "../types/facility";
+import type {FacilityId, FacilityPayload} from "../types/facility";
 
 export const CACHE_KEY = "recwell:facilityCache";
 export const CACHE_VERSION = 1;
-export const CACHE_REFRESH_GUARD_MS = 60 * 1000;
 
 type CacheEntry = {
     version: number;
     payload: FacilityPayload;
-    fetchedAt: number;
-    lastUpdated: string | null;
 };
 
 type CacheMap = Record<string, CacheEntry>;
@@ -18,10 +15,9 @@ const hasWindow = () => typeof window !== "undefined";
 const readCache = (): CacheMap => {
     if (!hasWindow()) return {};
 
-    const raw = window.localStorage.getItem(CACHE_KEY);
-    if (!raw) return {};
-
     try {
+        const raw = window.localStorage.getItem(CACHE_KEY);
+        if (!raw) return {};
         const parsed = JSON.parse(raw) as CacheMap;
         return parsed ?? {};
     } catch {
@@ -31,10 +27,14 @@ const readCache = (): CacheMap => {
 
 const writeCache = (map: CacheMap) => {
     if (!hasWindow()) return;
-    window.localStorage.setItem(CACHE_KEY, JSON.stringify(map));
+    try {
+        window.localStorage.setItem(CACHE_KEY, JSON.stringify(map));
+    } catch {
+        // Ignore storage write failures (private mode/quota exceeded).
+    }
 };
 
-export const getFacilityCache = (facilityId: 1186 | 1656): CacheEntry | null => {
+export const getFacilityCache = (facilityId: FacilityId): CacheEntry | null => {
     const map = readCache();
     const entry = map[String(facilityId)];
     if (!entry || entry.version !== CACHE_VERSION) return null;
@@ -42,17 +42,14 @@ export const getFacilityCache = (facilityId: 1186 | 1656): CacheEntry | null => 
 };
 
 export const setFacilityCache = (
-    facilityId: 1186 | 1656,
-    payload: FacilityPayload,
-    lastUpdated: string | null
+    facilityId: FacilityId,
+    payload: FacilityPayload
 ): void => {
     if (!hasWindow()) return;
     const map = readCache();
     map[String(facilityId)] = {
         version: CACHE_VERSION,
         payload,
-        fetchedAt: Date.now(),
-        lastUpdated,
     };
     writeCache(map);
 };

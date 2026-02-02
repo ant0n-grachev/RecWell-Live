@@ -10,7 +10,6 @@ export const nick: Record<number, Location[]> = {
             isClosed: null,
             currentCapacity: null,
             maxCapacity: 140,
-            percentageCapacity: null,
             lastUpdated: null,
         },
         {
@@ -21,7 +20,6 @@ export const nick: Record<number, Location[]> = {
             isClosed: null,
             currentCapacity: null,
             maxCapacity: 230,
-            percentageCapacity: null,
             lastUpdated: null,
         },
     ],
@@ -35,7 +33,6 @@ export const nick: Record<number, Location[]> = {
             isClosed: null,
             currentCapacity: null,
             maxCapacity: 150,
-            percentageCapacity: null,
             lastUpdated: null,
         },
         {
@@ -46,7 +43,6 @@ export const nick: Record<number, Location[]> = {
             isClosed: null,
             currentCapacity: null,
             maxCapacity: 24,
-            percentageCapacity: null,
             lastUpdated: null,
         },
     ],
@@ -60,7 +56,6 @@ export const nick: Record<number, Location[]> = {
             isClosed: null,
             currentCapacity: null,
             maxCapacity: 100,
-            percentageCapacity: null,
             lastUpdated: null,
         },
     ],
@@ -74,7 +69,6 @@ export const nick: Record<number, Location[]> = {
             isClosed: null,
             currentCapacity: null,
             maxCapacity: 200,
-            percentageCapacity: null,
             lastUpdated: null,
         },
         {
@@ -85,7 +79,6 @@ export const nick: Record<number, Location[]> = {
             isClosed: null,
             currentCapacity: null,
             maxCapacity: 48,
-            percentageCapacity: null,
             lastUpdated: null,
         },
         {
@@ -96,7 +89,6 @@ export const nick: Record<number, Location[]> = {
             isClosed: null,
             currentCapacity: null,
             maxCapacity: 24,
-            percentageCapacity: null,
             lastUpdated: null,
         },
     ],
@@ -110,7 +102,6 @@ export const nick: Record<number, Location[]> = {
             isClosed: null,
             currentCapacity: null,
             maxCapacity: 6,
-            percentageCapacity: null,
             lastUpdated: null,
         },
         {
@@ -121,7 +112,6 @@ export const nick: Record<number, Location[]> = {
             isClosed: null,
             currentCapacity: null,
             maxCapacity: 6,
-            percentageCapacity: null,
             lastUpdated: null,
         },
         {
@@ -132,7 +122,6 @@ export const nick: Record<number, Location[]> = {
             isClosed: null,
             currentCapacity: null,
             maxCapacity: 100,
-            percentageCapacity: null,
             lastUpdated: null,
         },
     ],

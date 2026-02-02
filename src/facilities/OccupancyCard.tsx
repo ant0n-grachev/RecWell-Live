@@ -1,17 +1,18 @@
 import {Box, Link, Typography} from "@mui/material";
-import ModernCard from "../../../shared/components/ModernCard";
-import {clampPercent, getOccupancyColor} from "../../../shared/utils/styles";
+import type {FacilityId} from "../lib/types/facility";
+import ModernCard from "../shared/components/ModernCard";
+import {clampPercent, getOccupancyColor} from "../shared/utils/styles";
 
 interface Props {
     title: string;
     total: number;
     max: number;
     lastUpdated?: string | null;
-    facilityId: 1186 | 1656;
+    facilityId: FacilityId;
     isLoading: boolean;
 }
 
-const FACILITY_LINKS: Record<1186 | 1656, {label: string; href: string}> = {
+const FACILITY_LINKS: Record<FacilityId, {label: string; href: string}> = {
     1186: {label: "Nick", href: "https://recwell.wisc.edu/locations/nick/"},
     1656: {label: "Bakke", href: "https://recwell.wisc.edu/locations/bakke/"},
 };

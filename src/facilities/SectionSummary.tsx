@@ -1,7 +1,7 @@
 import {Typography, Stack, Box} from "@mui/material";
-import ModernCard from "../../../shared/components/ModernCard";
-import type {Location} from "../../../lib/types/facility";
-import {clampPercent, getOccupancyColor} from "../../../shared/utils/styles";
+import type {Location} from "../lib/types/facility";
+import ModernCard from "../shared/components/ModernCard";
+import {clampPercent, getOccupancyColor} from "../shared/utils/styles";
 
 interface Props {
     title: string;

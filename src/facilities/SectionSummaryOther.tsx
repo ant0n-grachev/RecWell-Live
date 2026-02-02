@@ -1,7 +1,7 @@
 import {Box, Stack, Typography} from "@mui/material";
-import ModernCard from "../../../shared/components/ModernCard";
-import type {Location} from "../../../lib/types/facility";
-import {clampPercent, getOccupancyColor} from "../../../shared/utils/styles";
+import type {Location} from "../lib/types/facility";
+import ModernCard from "../shared/components/ModernCard";
+import {clampPercent, getOccupancyColor} from "../shared/utils/styles";
 
 interface Props {
     title: string;
@@ -13,6 +13,10 @@ export default function SectionSummaryOther({title, exclude, locations}: Props) 
     const list = locations
         .filter((l) => !exclude.includes(l.locationId))
         .sort((a, b) => a.locationName.localeCompare(b.locationName));
+
+    if (list.length === 0) {
+        return null;
+    }
 
     const total = list.reduce((s, l) => s + (l.currentCapacity ?? 0), 0);
     const max = list.reduce((s, l) => s + (l.maxCapacity ?? 0), 0);

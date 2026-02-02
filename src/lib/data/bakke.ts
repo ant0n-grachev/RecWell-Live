@@ -10,7 +10,6 @@ export const bakke: Record<number, Location[]> = {
             isClosed: null,
             currentCapacity: null,
             maxCapacity: 30,
-            percentageCapacity: null,
             lastUpdated: null,
         },
         {
@@ -21,7 +20,6 @@ export const bakke: Record<number, Location[]> = {
             isClosed: null,
             currentCapacity: null,
             maxCapacity: 130,
-            percentageCapacity: null,
             lastUpdated: null,
         },
         {
@@ -32,7 +30,6 @@ export const bakke: Record<number, Location[]> = {
             isClosed: null,
             currentCapacity: null,
             maxCapacity: 24,
-            percentageCapacity: null,
             lastUpdated: null,
         },
         {
@@ -43,7 +40,6 @@ export const bakke: Record<number, Location[]> = {
             isClosed: null,
             currentCapacity: null,
             maxCapacity: 24,
-            percentageCapacity: null,
             lastUpdated: null,
         },
         {
@@ -54,7 +50,6 @@ export const bakke: Record<number, Location[]> = {
             isClosed: null,
             currentCapacity: null,
             maxCapacity: 116,
-            percentageCapacity: null,
             lastUpdated: null,
         },
         {
@@ -65,7 +60,6 @@ export const bakke: Record<number, Location[]> = {
             isClosed: null,
             currentCapacity: null,
             maxCapacity: 200,
-            percentageCapacity: null,
             lastUpdated: null,
         },
     ],
@@ -79,18 +73,6 @@ export const bakke: Record<number, Location[]> = {
             isClosed: null,
             currentCapacity: null,
             maxCapacity: 65,
-            percentageCapacity: null,
-            lastUpdated: null,
-        },
-        {
-            facilityId: 1656,
-            locationId: 8708,
-            locationName: "Bakke Willow Room",
-            floor: 2,
-            isClosed: null,
-            currentCapacity: null,
-            maxCapacity: 27,
-            percentageCapacity: null,
             lastUpdated: null,
         },
         {
@@ -101,7 +83,6 @@ export const bakke: Record<number, Location[]> = {
             isClosed: null,
             currentCapacity: null,
             maxCapacity: 12,
-            percentageCapacity: null,
             lastUpdated: null,
         },
     ],
@@ -115,7 +96,6 @@ export const bakke: Record<number, Location[]> = {
             isClosed: null,
             currentCapacity: null,
             maxCapacity: 246,
-            percentageCapacity: null,
             lastUpdated: null,
         },
         {
@@ -126,7 +106,6 @@ export const bakke: Record<number, Location[]> = {
             isClosed: null,
             currentCapacity: null,
             maxCapacity: 48,
-            percentageCapacity: null,
             lastUpdated: null,
         },
         {
@@ -137,7 +116,6 @@ export const bakke: Record<number, Location[]> = {
             isClosed: null,
             currentCapacity: null,
             maxCapacity: 39,
-            percentageCapacity: null,
             lastUpdated: null,
         },
     ],
@@ -151,7 +129,6 @@ export const bakke: Record<number, Location[]> = {
             isClosed: null,
             currentCapacity: null,
             maxCapacity: 75,
-            percentageCapacity: null,
             lastUpdated: null,
         },
         {
@@ -162,7 +139,6 @@ export const bakke: Record<number, Location[]> = {
             isClosed: null,
             currentCapacity: null,
             maxCapacity: 46,
-            percentageCapacity: null,
             lastUpdated: null,
         },
         {
@@ -173,7 +149,6 @@ export const bakke: Record<number, Location[]> = {
             isClosed: null,
             currentCapacity: null,
             maxCapacity: 100,
-            percentageCapacity: null,
             lastUpdated: null,
         },
         {
@@ -184,7 +159,6 @@ export const bakke: Record<number, Location[]> = {
             isClosed: null,
             currentCapacity: null,
             maxCapacity: 18,
-            percentageCapacity: null,
             lastUpdated: null,
         },
     ],

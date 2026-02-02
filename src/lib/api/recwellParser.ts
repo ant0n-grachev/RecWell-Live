@@ -1,15 +1,35 @@
 import axios from "axios";
-import type {Location, FacilityPayload} from "../types/facility";
+import type {FacilityId, FacilityPayload, Location} from "../types/facility";
 import {nick} from "../data/nick";
 import {bakke} from "../data/bakke";
 
 const URL =
     "https://goboardapi.azurewebsites.net/api/FacilityCount/GetCountsByAccount?AccountAPIKey=7938fc89-a15c-492d-9566-12c961bc1f27";
 
-const safePercent = (current: number | null, max: number | null) => {
-    if (!current || !max) return null;
-    return Math.round((current / max) * 100);
+interface LiveLocationRow {
+    LocationId: number;
+    IsClosed: boolean | null;
+    LastCount: number | null;
+    LastUpdatedDateAndTime: string | null;
+}
+
+const FACILITY_NAMES: Record<FacilityId, string> = {
+    1186: "Nicholas Recreation Center",
+    1656: "Bakke Recreation & Wellbeing Center",
 };
+
+const FACILITY_LAYOUTS: Record<FacilityId, Record<number, Location[]>> = {
+    1186: nick,
+    1656: bakke,
+};
+
+const cloneLayout = (layout: Record<number, Location[]>): Record<number, Location[]> =>
+    Object.fromEntries(
+        Object.entries(layout).map(([floor, locations]) => [
+            Number(floor),
+            locations.map((location) => ({...location})),
+        ])
+    );
 
 const flatten = (floors: Record<number, Location[]>) => {
     return Object.values(floors)
@@ -21,16 +41,13 @@ const flatten = (floors: Record<number, Location[]>) => {
 };
 
 export async function fetchFacility(
-    facilityId: 1186 | 1656,
+    facilityId: FacilityId,
     signal?: AbortSignal
 ): Promise<FacilityPayload> {
-    const layout: Record<number, Location[]> =
-        facilityId === 1186
-            ? JSON.parse(JSON.stringify(nick))
-            : JSON.parse(JSON.stringify(bakke));
+    const layout = cloneLayout(FACILITY_LAYOUTS[facilityId]);
 
-    const resp = await axios.get(URL, {signal});
-    const live = resp.data;
+    const resp = await axios.get<LiveLocationRow[]>(URL, {signal});
+    const live = resp.data ?? [];
 
     const index: Record<number, Location> = {};
 
@@ -40,27 +57,22 @@ export async function fetchFacility(
 
             loc.isClosed = null;
             loc.currentCapacity = null;
-            loc.percentageCapacity = null;
             loc.lastUpdated = null;
         }
     }
 
-    for (const f of live) {
-        const loc = index[f.LocationId];
+    for (const row of live) {
+        const loc = index[row.LocationId];
         if (!loc) continue;
 
-        loc.isClosed = f.IsClosed;
-        loc.currentCapacity = f.LastCount;
-        loc.percentageCapacity = safePercent(f.LastCount, loc.maxCapacity);
-        loc.lastUpdated = f.LastUpdatedDateAndTime ?? null;
+        loc.isClosed = row.IsClosed;
+        loc.currentCapacity = row.LastCount;
+        loc.lastUpdated = row.LastUpdatedDateAndTime ?? null;
     }
 
     return {
         facilityId,
-        facilityName:
-            facilityId === 1186
-                ? "Nicholas Recreation Center"
-                : "Bakke Recreation & Wellbeing Center",
+        facilityName: FACILITY_NAMES[facilityId],
         floors: layout,
         locations: flatten(layout),
     };

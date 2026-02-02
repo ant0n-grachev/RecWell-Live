@@ -1,47 +1,78 @@
 import {useCallback, useEffect, useState} from "react";
 import {
     Alert,
-    Container,
     Box,
     CircularProgress,
-    Typography,
-    Link,
+    Container,
     IconButton,
-    Tooltip,
+    Link,
     Stack,
+    Tooltip,
+    Typography,
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
-import FacilitySelector from "../features/facilities/components/FacilitySelector";
-import OccupancyCard from "../features/facilities/components/OccupancyCard";
-import SectionSummary from "../features/facilities/components/SectionSummary";
+import GitHubIcon from "@mui/icons-material/GitHub";
+import FacilitySelector from "../facilities/FacilitySelector";
+import OccupancyCard from "../facilities/OccupancyCard";
+import SectionSummary from "../facilities/SectionSummary";
+import SectionSummaryOther from "../facilities/SectionSummaryOther";
 import {fetchFacility} from "../lib/api/recwellParser";
-import type {FacilityPayload} from "../lib/types/facility";
 import {
-    BAKKE_COURTS,
-    BAKKE_FITNESS,
-    BAKKE_ICE,
-    BAKKE_MENDOTA,
-    BAKKE_POOL,
-    BAKKE_TRACK,
-    BAKKE_ESPORTS,
-    BAKKE_SKYBOX,
-    NICK_COURTS,
-    NICK_FITNESS,
-    NICK_POOL,
-    NICK_RACQUETBALL,
-    NICK_TRACK,
-} from "../features/facilities/constants";
+    FACILITY_DASHBOARD_CONFIG,
+    FACILITY_KNOWN_IDS,
+    isSectionRow,
+    type SectionConfig,
+    type SectionLayout,
+} from "../facilities/constants";
 import {getFacilityCache, setFacilityCache} from "../lib/storage/facilityCache";
-const FACILITY_STORAGE_KEY = "recwell:selectedFacility";
+import type {FacilityId, FacilityPayload} from "../lib/types/facility";
 
-const getStoredFacility = (): 1186 | 1656 => {
+const FACILITY_STORAGE_KEY = "recwell:selectedFacility";
+const AUTO_REFRESH_INTERVAL_MS = 15 * 60 * 1000;
+const AUTO_REFRESH_CHECK_INTERVAL_MS = 60 * 1000;
+const MANUAL_REFRESH_COOLDOWN_MS = 3000;
+
+const getStoredFacility = (): FacilityId => {
     if (typeof window === "undefined") return 1186;
     const stored = Number(window.localStorage.getItem(FACILITY_STORAGE_KEY));
     return stored === 1656 ? 1656 : 1186;
 };
 
+const getLatestTimestamp = (payload: FacilityPayload | null | undefined): string | null => {
+    if (!payload) return null;
+
+    let latest: string | null = null;
+    for (const location of payload.locations) {
+        if (location.lastUpdated && (!latest || location.lastUpdated > latest)) {
+            latest = location.lastUpdated;
+        }
+    }
+
+    return latest;
+};
+
+const renderSection = (section: SectionConfig, locations: FacilityPayload["locations"]) => (
+    <SectionSummary key={section.title} title={section.title} ids={[...section.ids]} locations={locations}/>
+);
+
+const renderSectionLayout = (layout: SectionLayout, locations: FacilityPayload["locations"], index: number) => {
+    if (!isSectionRow(layout)) {
+        return renderSection(layout, locations);
+    }
+
+    return (
+        <Stack key={`row-${index}`} direction={{xs: "column", sm: "row"}} spacing={2} alignItems="stretch">
+            {layout.map((section) => (
+                <Box key={section.title} sx={{flex: 1, minWidth: 0}}>
+                    <SectionSummary title={section.title} ids={[...section.ids]} locations={locations}/>
+                </Box>
+            ))}
+        </Stack>
+    );
+};
+
 export default function App() {
-    const [facility, setFacility] = useState<1186 | 1656>(getStoredFacility);
+    const [facility, setFacility] = useState<FacilityId>(getStoredFacility);
     const [refreshKey, setRefreshKey] = useState(0);
     const [data, setData] = useState<FacilityPayload | null>(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -52,64 +83,52 @@ export default function App() {
 
     useEffect(() => {
         if (typeof window === "undefined") return;
-        window.localStorage.setItem(FACILITY_STORAGE_KEY, String(facility));
+        try {
+            window.localStorage.setItem(FACILITY_STORAGE_KEY, String(facility));
+        } catch {
+            // Ignore storage write failures (private mode/quota exceeded).
+        }
     }, [facility]);
 
-    const getLatestTimestamp = (payload: FacilityPayload | null | undefined) => {
-        if (!payload) return null;
-        return (
-            payload.locations
-                .map((l) => l.lastUpdated)
-                .filter(Boolean)
-                .sort()
-                .slice(-1)[0] ?? null
-        );
-    };
-
     useEffect(() => {
-        if (!facility) return;
-
+        const controller = new AbortController();
         let isCancelled = false;
-        let activeController: AbortController | null = null;
 
         const cached = getFacilityCache(facility);
-        if (cached && !isCancelled) {
+        if (cached) {
             setData(cached.payload);
             setFreshness(null);
-        } else if (!cached && !isCancelled) {
+        } else {
             setData(null);
             setFreshness(null);
         }
 
         const load = async () => {
-            activeController?.abort();
-            const controller = new AbortController();
-            activeController = controller;
             setIsLoading(true);
             setError(null);
             setFreshness(null);
 
             try {
                 const payload = await fetchFacility(facility, controller.signal);
-                if (!isCancelled) {
-                    setData(payload);
+                if (isCancelled || controller.signal.aborted) return;
+
+                setData(payload);
+                setError(null);
+                setFreshness("live");
+                setFacilityCache(facility, payload);
+            } catch (loadError) {
+                if (isCancelled || controller.signal.aborted) return;
+
+                console.error("Failed to fetch facility data", loadError);
+                const fallback = getFacilityCache(facility);
+                if (fallback) {
+                    setData(fallback.payload);
+                    setFreshness("cached");
                     setError(null);
-                    setFreshness("live");
-                    setFacilityCache(facility, payload, getLatestTimestamp(payload));
-                }
-            } catch (error) {
-                if (!controller.signal.aborted) {
-                    console.error("Failed to fetch facility data", error);
-                    const fallback = getFacilityCache(facility);
-                    if (fallback) {
-                        setData(fallback.payload);
-                        setFreshness("cached");
-                        setError(null);
-                    } else {
-                        setData(null);
-                        setFreshness(null);
-                        setError("Data unavailable right now. Please try again shortly.");
-                    }
+                } else {
+                    setData(null);
+                    setFreshness(null);
+                    setError("Data unavailable right now. Please try again shortly.");
                 }
             } finally {
                 if (!isCancelled && !controller.signal.aborted) {
@@ -118,11 +137,11 @@ export default function App() {
             }
         };
 
-        load();
+        void load();
 
         return () => {
             isCancelled = true;
-            activeController?.abort();
+            controller.abort();
         };
     }, [facility, refreshKey]);
 
@@ -135,20 +154,21 @@ export default function App() {
     }, []);
 
     useEffect(() => {
+        if (typeof window === "undefined") return;
+
         const interval = window.setInterval(() => {
-            if (!isLoading && Date.now() - lastAutoRefresh >= 15 * 60 * 1000) {
+            if (!isLoading && Date.now() - lastAutoRefresh >= AUTO_REFRESH_INTERVAL_MS) {
                 triggerRefresh(() => setRefreshKey((key) => key + 1));
             }
-        }, 60 * 1000);
+        }, AUTO_REFRESH_CHECK_INTERVAL_MS);
 
         return () => {
             window.clearInterval(interval);
         };
     }, [isLoading, lastAutoRefresh, triggerRefresh]);
 
-    const handleFacilitySelect = (next: 1186 | 1656) => {
+    const handleFacilitySelect = (next: FacilityId) => {
         if (next === facility) return;
-        setLastAutoRefresh(Date.now());
         setLastManualRefresh(0);
         triggerRefresh(() => setFacility(next));
     };
@@ -161,25 +181,31 @@ export default function App() {
         ? data.locations.reduce((sum, l) => sum + (l.maxCapacity ?? 0), 0)
         : 0;
 
-    const lastUpdated = data
-        ? data.locations
-            .map((l) => l.lastUpdated)
-            .filter(Boolean)
-            .sort()
-            .slice(-1)[0]
-        : null;
+    const lastUpdated = getLatestTimestamp(data);
 
     const manualRefresh = () => {
         if (isLoading) return;
         const now = Date.now();
-        if (now - lastManualRefresh < 3000) return;
+        if (now - lastManualRefresh < MANUAL_REFRESH_COOLDOWN_MS) return;
         setLastManualRefresh(now);
         triggerRefresh(() => setRefreshKey((key) => key + 1));
     };
 
-    const formattedCachedTime = lastUpdated
-        ? new Date(lastUpdated).toLocaleString([], {hour: "numeric", minute: "2-digit", month: "short", day: "numeric"})
-        : null;
+    const dashboardConfig = FACILITY_DASHBOARD_CONFIG[facility];
+    const knownIds = FACILITY_KNOWN_IDS[facility];
+
+    const formattedCachedTime = (() => {
+        if (!lastUpdated) return null;
+        const parsed = new Date(lastUpdated);
+        if (Number.isNaN(parsed.getTime())) return null;
+
+        return parsed.toLocaleString([], {
+            hour: "numeric",
+            minute: "2-digit",
+            month: "short",
+            day: "numeric",
+        });
+    })();
 
     return (
         <Box sx={{py: {xs: 2, sm: 3}, bgcolor: "background.default", minHeight: "100vh"}}>
@@ -256,120 +282,39 @@ export default function App() {
                             </Alert>
                         )}
 
-                        {facility === 1186 && (
-                            <>
-                                <SectionSummary
-                                    title="🏋️ Fitness Floors"
-                                    ids={NICK_FITNESS}
-                                    locations={data.locations}
-                                />
-
-                                <SectionSummary
-                                    title="🏀 Basketball Courts"
-                                    ids={NICK_COURTS}
-                                    locations={data.locations}
-                                />
-
-                                <Stack direction={{xs: "column", sm: "row"}} spacing={2} alignItems="stretch">
-                                    <Box sx={{flex: 1, minWidth: 0}}>
-                                        <SectionSummary
-                                            title="👟 Running Track"
-                                            ids={NICK_TRACK}
-                                            locations={data.locations}
-                                        />
-                                    </Box>
-                                    <Box sx={{flex: 1, minWidth: 0}}>
-                                        <SectionSummary
-                                            title="🏊‍♀️ Swimming Pool"
-                                            ids={NICK_POOL}
-                                            locations={data.locations}
-                                        />
-                                    </Box>
-                                </Stack>
-
-                                <SectionSummary
-                                    title="🎾 Racquetball Courts"
-                                    ids={NICK_RACQUETBALL}
-                                    locations={data.locations}
-                                />
-                            </>
+                        {dashboardConfig.sections.map((layout, index) =>
+                            renderSectionLayout(layout, data.locations, index)
                         )}
 
-                        {facility === 1656 && (
-                            <>
-                                <SectionSummary
-                                    title="🏋️ Fitness Floors"
-                                    ids={BAKKE_FITNESS}
-                                    locations={data.locations}
-                                />
-
-                                <SectionSummary
-                                    title="🏀 Basketball Courts"
-                                    ids={BAKKE_COURTS}
-                                    locations={data.locations}
-                                />
-
-                                <Stack direction={{xs: "column", sm: "row"}} spacing={2} alignItems="stretch">
-                                    <Box sx={{flex: 1, minWidth: 0}}>
-                                        <SectionSummary
-                                            title="👟 Running Track"
-                                            ids={BAKKE_TRACK}
-                                            locations={data.locations}
-                                        />
-                                    </Box>
-                                    <Box sx={{flex: 1, minWidth: 0}}>
-                                        <SectionSummary
-                                            title="🏊‍♂️ Swimming Pool"
-                                            ids={BAKKE_POOL}
-                                            locations={data.locations}
-                                        />
-                                    </Box>
-                                </Stack>
-
-                                <Stack direction={{xs: "column", sm: "row"}} spacing={2} alignItems="stretch">
-                                    <Box sx={{flex: 1, minWidth: 0}}>
-                                        <SectionSummary
-                                            title="🧗 Rock Climbing"
-                                            ids={BAKKE_MENDOTA}
-                                            locations={data.locations}
-                                        />
-                                    </Box>
-                                    <Box sx={{flex: 1, minWidth: 0}}>
-                                        <SectionSummary
-                                            title="🧊 Ice Skating"
-                                            ids={BAKKE_ICE}
-                                            locations={data.locations}
-                                        />
-                                    </Box>
-                                </Stack>
-
-                                <Stack direction={{xs: "column", sm: "row"}} spacing={2} alignItems="stretch">
-                                    <Box sx={{flex: 1, minWidth: 0}}>
-                                        <SectionSummary
-                                            title="🎮 Esports Room"
-                                            ids={BAKKE_ESPORTS}
-                                            locations={data.locations}
-                                        />
-                                    </Box>
-                                    <Box sx={{flex: 1, minWidth: 0}}>
-                                        <SectionSummary
-                                            title="⛳ Sports Simulators"
-                                            ids={BAKKE_SKYBOX}
-                                            locations={data.locations}
-                                        />
-                                    </Box>
-                                </Stack>
-
-                            </>
-                        )}
+                        <SectionSummaryOther
+                            title={dashboardConfig.otherTitle}
+                            exclude={knownIds}
+                            locations={data.locations}
+                        />
                     </>
                 )}
 
-                <Box component="footer" sx={{textAlign: "center", color: "text.secondary", fontSize: "0.85rem", py: 2}}>
-                    Built by {" "}
-                    <Link href="https://anton.grachev.us" target="_blank" rel="noopener noreferrer" underline="hover">
-                        Anton
-                    </Link>
+                <Box component="footer" sx={{py: 2}}>
+                    <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="center">
+                        <Typography color="text.secondary" sx={{fontSize: "0.85rem"}}>
+                            Built by{" "}
+                            <Link href="https://anton.grachev.us" target="_blank" rel="noopener noreferrer" underline="hover">
+                                Anton
+                            </Link>
+                        </Typography>
+                        <Tooltip title="Source code">
+                            <IconButton
+                                size="small"
+                                component="a"
+                                href="https://github.com/ant0n-grachev/RecWell-Live"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                aria-label="View source code on GitHub"
+                            >
+                                <GitHubIcon fontSize="small"/>
+                            </IconButton>
+                        </Tooltip>
+                    </Stack>
                 </Box>
             </Container>
         </Box>

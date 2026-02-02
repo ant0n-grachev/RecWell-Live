@@ -1,8 +1,9 @@
 import {ToggleButton, ToggleButtonGroup} from "@mui/material";
+import type {FacilityId} from "../lib/types/facility";
 
 interface Props {
-    facility: 1186 | 1656 | null;
-    onSelect: (f: 1186 | 1656) => void;
+    facility: FacilityId;
+    onSelect: (f: FacilityId) => void;
 }
 
 export default function FacilitySelector({facility, onSelect}: Props) {
