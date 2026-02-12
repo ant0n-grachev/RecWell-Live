@@ -236,9 +236,11 @@ export default function ForecastWindowsCard({
                                                 borderColor: style.color,
                                                 color: active ? style.color : "text.primary",
                                                 bgcolor: active ? style.bg : "transparent",
-                                                "&:hover": {
-                                                    borderColor: style.color,
-                                                    bgcolor: style.bg,
+                                                "@media (hover: hover) and (pointer: fine)": {
+                                                    "&:hover": {
+                                                        borderColor: style.color,
+                                                        bgcolor: style.bg,
+                                                    },
                                                 },
                                             }}
                                         >
