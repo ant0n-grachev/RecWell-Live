@@ -11,12 +11,32 @@ interface Props {
     forecast?: ForecastHour[];
 }
 
-const renderForecastStrip = (forecast: ForecastHour[] | undefined) => {
-    if (!forecast || forecast.length === 0) return null;
+const resolveTrendArrow = (
+    forecast: ForecastHour[] | undefined,
+    currentOccupancy: number,
+    maxCapacity: number
+): string => {
+    if (!forecast || forecast.length === 0) return "→";
 
-    const first = forecast[0]?.expectedCount ?? 0;
-    const last = forecast[Math.min(2, forecast.length - 1)]?.expectedCount ?? first;
-    const trendArrow = last > first ? "↑" : last < first ? "↓" : "→";
+    const baseline = Number(currentOccupancy || 0);
+    const last = Number(
+        forecast[Math.min(2, forecast.length - 1)]?.expectedCount ?? baseline
+    );
+    const referenceCap = maxCapacity > 0 ? maxCapacity : Math.max(baseline, last, 1);
+    const tolerance = Math.max(2, Math.round(referenceCap * 0.03));
+    const delta = last - baseline;
+
+    if (Math.abs(delta) <= tolerance) return "→";
+    return delta > 0 ? "↑" : "↓";
+};
+
+const renderForecastStrip = (
+    forecast: ForecastHour[] | undefined,
+    currentOccupancy: number,
+    maxCapacity: number
+) => {
+    if (!forecast || forecast.length === 0) return null;
+    const trendArrow = resolveTrendArrow(forecast, currentOccupancy, maxCapacity);
 
     return (
         <Box
@@ -117,7 +137,11 @@ export default function SectionSummary({
                         {percent}% full
                     </Typography>
 
-                    {renderForecastStrip(forecast)}
+                    {renderForecastStrip(
+                        forecast,
+                        only!.currentCapacity ?? 0,
+                        only!.maxCapacity ?? 0
+                    )}
                 </>
             )}
 
@@ -132,7 +156,7 @@ export default function SectionSummary({
                         {percent}% full
                     </Typography>
 
-                    {renderForecastStrip(forecast)}
+                    {renderForecastStrip(forecast, total, max)}
 
                     <Stack spacing={1} sx={{mt: 1}}>
                         {list.map((loc) => {
