@@ -9,6 +9,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 import numpy as np
 import pymysql
 import pytz
+import requests
 import xgboost as xgb
 
 TZ_NAME = "America/Chicago"
@@ -32,7 +33,7 @@ FORCE_RETRAIN = os.getenv("MODEL_FORCE_RETRAIN", "0").strip().lower() in (
     "yes",
     "on",
 )
-MODEL_SCHEMA_VERSION = 3
+MODEL_SCHEMA_VERSION = 4
 
 INTERVAL_MIN_SAMPLES_PER_HOUR = int(os.getenv("INTERVAL_MIN_SAMPLES_PER_HOUR", "30"))
 INTERVAL_Q_LOW = float(os.getenv("INTERVAL_Q_LOW", "0.10"))
@@ -64,6 +65,15 @@ SPIKE_AWARE_MAX_AGE_MIN = float(os.getenv("SPIKE_AWARE_MAX_AGE_MIN", "90"))
 SPIKE_AWARE_HORIZON_HOURS = int(os.getenv("SPIKE_AWARE_HORIZON_HOURS", "6"))
 SPIKE_AWARE_DECAY = float(os.getenv("SPIKE_AWARE_DECAY", "0.55"))
 SPIKE_AWARE_MAX_CAP_MULTIPLIER = float(os.getenv("SPIKE_AWARE_MAX_CAP_MULTIPLIER", "1.35"))
+WEATHER_URL = os.getenv("GYM_WEATHER_URL", "https://api.open-meteo.com/v1/forecast")
+WEATHER_ARCHIVE_URL = os.getenv(
+    "GYM_WEATHER_ARCHIVE_URL",
+    "https://archive-api.open-meteo.com/v1/archive",
+)
+WEATHER_LAT = float(os.getenv("GYM_WEATHER_LAT", "43.0731"))
+WEATHER_LON = float(os.getenv("GYM_WEATHER_LON", "-89.4012"))
+WEATHER_FORECAST_DAYS = int(os.getenv("GYM_WEATHER_FORECAST_DAYS", "7"))
+WEATHER_HISTORY_MAX_DAYS = int(os.getenv("GYM_WEATHER_HISTORY_MAX_DAYS", "180"))
 
 FORECAST_JSON_PATH = os.getenv(
     "FORECAST_JSON_PATH",
@@ -76,6 +86,34 @@ MODEL_ARTIFACT_DIR = os.getenv(
 )
 MODEL_PATH = os.path.join(MODEL_ARTIFACT_DIR, "forecast_model.xgb.json")
 MODEL_META_PATH = os.path.join(MODEL_ARTIFACT_DIR, "forecast_model.meta.json")
+
+WEATHER_KEYS = (
+    "temp_c",
+    "feels_like_c",
+    "precip_mm",
+    "rain_mm",
+    "snow_cm",
+    "wind_mps",
+    "wind_gust_mps",
+    "humidity_pct",
+    "weather_code",
+)
+WEATHER_ROLLING_KEYS = (
+    "temp_c",
+    "precip_mm",
+    "wind_mps",
+)
+WEATHER_API_HOURLY_MAP = {
+    "temp_c": "temperature_2m",
+    "feels_like_c": "apparent_temperature",
+    "precip_mm": "precipitation",
+    "rain_mm": "rain",
+    "snow_cm": "snowfall",
+    "wind_mps": "wind_speed_10m",
+    "wind_gust_mps": "wind_gusts_10m",
+    "humidity_pct": "relative_humidity_2m",
+    "weather_code": "weather_code",
+}
 
 FACILITIES = {
     1186: {
@@ -275,8 +313,8 @@ def parse_observed_at_value(raw_value) -> Optional[datetime]:
 
 
 def model_feature_count(loc_count: int) -> int:
-    # 13 time/cycle + 9 lag/recency + loc one-hot
-    return 22 + loc_count
+    # 13 time/cycle + 9 lag/recency + (9 weather * 3 stats) + (3 rolling weather) + loc one-hot
+    return 52 + loc_count
 
 
 def last_before(times: List[datetime], values: List[float], target: datetime) -> Tuple[float, float]:
@@ -331,16 +369,80 @@ def rolling_mean(
     return float(sum(values) / len(values))
 
 
+def to_float_or_none(value) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except Exception:
+        return None
+
+
+def weather_last_before(
+    times: List[datetime],
+    weather_map: Dict[datetime, Dict[str, float]],
+    target: datetime,
+    key: str,
+) -> float:
+    idx = bisect.bisect_left(times, target) - 1
+    while idx >= 0:
+        row = weather_map.get(times[idx], {})
+        value = row.get(key)
+        if value is not None:
+            return float(value)
+        idx -= 1
+    return float("nan")
+
+
+def weather_value_at_or_before(
+    times: List[datetime],
+    weather_map: Dict[datetime, Dict[str, float]],
+    target: datetime,
+    key: str,
+) -> float:
+    row = weather_map.get(target)
+    if row is not None:
+        value = row.get(key)
+        if value is not None:
+            return float(value)
+    return weather_last_before(times, weather_map, target, key)
+
+
+def weather_rolling_mean(
+    times: List[datetime],
+    weather_map: Dict[datetime, Dict[str, float]],
+    target: datetime,
+    steps: int,
+    key: str,
+) -> float:
+    values = []
+    for i in range(1, steps + 1):
+        ts = target - timedelta(minutes=RESAMPLE_MINUTES * i)
+        value = weather_value_at_or_before(times, weather_map, ts, key)
+        if not math.isnan(value):
+            values.append(value)
+    if not values:
+        return float("nan")
+    return float(sum(values) / len(values))
+
+
 def build_features(
     target: datetime,
     loc_data: Dict[str, object],
     onehot: List[float],
+    weather_source: Optional[Dict[str, object]] = None,
 ) -> List[float]:
     bucket_map = loc_data["bucket_map"]
     bucket_times = loc_data["bucket_times"]
     bucket_values = loc_data["bucket_values"]
     raw_times = loc_data["raw_times"]
     raw_values = loc_data["raw_values"]
+    if weather_source is not None:
+        weather_bucket_map = weather_source.get("map", {})
+        weather_bucket_times = weather_source.get("times", [])
+    else:
+        weather_bucket_map = loc_data.get("weather_bucket_map", {})
+        weather_bucket_times = loc_data.get("weather_bucket_times", [])
 
     lag_15m = bucket_map.get(target - timedelta(minutes=RESAMPLE_MINUTES))
     lag_1h = bucket_map.get(target - timedelta(hours=1))
@@ -370,6 +472,44 @@ def build_features(
         target,
         steps=max(1, int(120 / RESAMPLE_MINUTES)),
     )
+    weather_features: List[float] = []
+    weather_ts = target
+    lag_ts = target - timedelta(hours=1)
+
+    for key in WEATHER_KEYS:
+        weather_now = weather_value_at_or_before(
+            weather_bucket_times,
+            weather_bucket_map,
+            weather_ts,
+            key,
+        )
+        weather_1h = weather_value_at_or_before(
+            weather_bucket_times,
+            weather_bucket_map,
+            lag_ts,
+            key,
+        )
+        weather_delta_1h = float("nan")
+        if not math.isnan(weather_now) and not math.isnan(weather_1h):
+            weather_delta_1h = weather_now - weather_1h
+
+        weather_features.extend(
+            [
+                float(weather_now),
+                float(weather_1h),
+                float(weather_delta_1h),
+            ]
+        )
+
+    for key in WEATHER_ROLLING_KEYS:
+        weather_roll = weather_rolling_mean(
+            weather_bucket_times,
+            weather_bucket_map,
+            target,
+            steps=max(1, int(180 / RESAMPLE_MINUTES)),
+            key=key,
+        )
+        weather_features.append(float(weather_roll))
 
     return (
         build_time_features(target)
@@ -384,6 +524,7 @@ def build_features(
             float(minutes_since_bucket),
             float(minutes_since_raw),
         ]
+        + weather_features
         + onehot
     )
 
@@ -453,7 +594,14 @@ def load_history(conn):
 
     with conn.cursor() as cur:
         cur.execute(sql, params)
-        for loc_id, last_updated, fetched_at, current_capacity, _is_closed, max_cap in cur.fetchall():
+        for (
+            loc_id,
+            last_updated,
+            fetched_at,
+            current_capacity,
+            _is_closed,
+            max_cap,
+        ) in cur.fetchall():
             quality["rowsRead"] += 1
             if current_capacity is None:
                 quality["rowsDroppedInvalid"] += 1
@@ -603,6 +751,7 @@ def train_global_model(
     loc_data: Dict[int, Dict[str, object]],
     onehot: Dict[int, List[float]],
     loc_samples: Dict[int, int],
+    weather_source: Optional[Dict[str, object]],
 ):
     rows = []
     for loc_id, data in loc_data.items():
@@ -614,7 +763,7 @@ def train_global_model(
         if onehot_vec is None:
             continue
         for target, label in zip(data["bucket_times"], data["bucket_values"]):
-            features = build_features(target, data, onehot_vec)
+            features = build_features(target, data, onehot_vec, weather_source=weather_source)
             rows.append((target, features, label))
 
     if len(rows) < MIN_TRAIN_SAMPLES:
@@ -790,6 +939,7 @@ def prepare_model(
     onehot: Dict[int, List[float]],
     loc_data: Dict[int, Dict[str, object]],
     loc_samples: Dict[int, int],
+    weather_series: Optional[Dict[str, object]],
 ):
     feature_count = model_feature_count(len(expected_loc_ids))
     saved_model, saved_meta = load_saved_model(expected_loc_ids, feature_count)
@@ -802,6 +952,7 @@ def prepare_model(
             loc_data,
             onehot,
             loc_samples,
+            weather_series,
         )
         run_metrics = candidate_metrics
 
@@ -914,9 +1065,9 @@ def estimate_location(
         and loc_samples.get(loc_id, 0) >= MIN_SAMPLES_PER_LOC
         and not loc_entry.get("is_stale")
     ):
-        onehot = ctx["onehot"]
+        weather_source = ctx.get("weather_series")
         features = np.array(
-            [build_features(target, loc_entry, onehot_vec)],
+            [build_features(target, loc_entry, onehot_vec, weather_source=weather_source)],
             dtype=np.float32,
         )
         ratio = float(model.predict(xgb.DMatrix(features))[0])
@@ -1233,6 +1384,192 @@ def get_targets_for_date(day_date: date) -> List[datetime]:
     return targets
 
 
+def parse_weather_hourly_payload(
+    payload: Dict[str, object],
+    min_dt: Optional[datetime] = None,
+    max_dt: Optional[datetime] = None,
+) -> Dict[str, object]:
+    hourly = payload.get("hourly") or {}
+    times_raw = hourly.get("time") or []
+    if not times_raw:
+        return {"times": [], "map": {}}
+
+    weather_map: Dict[datetime, Dict[str, float]] = {}
+    for idx, ts_raw in enumerate(times_raw):
+        try:
+            parsed = datetime.fromisoformat(str(ts_raw))
+        except Exception:
+            continue
+
+        if parsed.tzinfo is None:
+            parsed = TZ.localize(parsed)
+        else:
+            parsed = parsed.astimezone(TZ)
+
+        if min_dt is not None and parsed < min_dt:
+            continue
+        if max_dt is not None and parsed > max_dt:
+            continue
+
+        row: Dict[str, float] = {}
+        for key, api_key in WEATHER_API_HOURLY_MAP.items():
+            series = hourly.get(api_key) or []
+            value = series[idx] if idx < len(series) else None
+            numeric = to_float_or_none(value)
+            if numeric is not None:
+                row[key] = numeric
+
+        if row:
+            weather_map[parsed] = row
+
+    times = sorted(weather_map.keys())
+    return {"times": times, "map": weather_map}
+
+
+def merge_weather_series(*series_list: Dict[str, object]) -> Dict[str, object]:
+    merged_map: Dict[datetime, Dict[str, float]] = {}
+
+    for series in series_list:
+        weather_map = series.get("map", {})
+        if not isinstance(weather_map, dict):
+            continue
+        for ts, row in weather_map.items():
+            if not isinstance(ts, datetime) or not isinstance(row, dict):
+                continue
+            combined = merged_map.get(ts, {}).copy()
+            combined.update(row)
+            merged_map[ts] = combined
+
+    times = sorted(merged_map.keys())
+    return {"times": times, "map": merged_map}
+
+
+def weather_history_start(loc_data: Dict[int, Dict[str, object]], now: datetime) -> datetime:
+    floor_start = now - timedelta(days=max(1, WEATHER_HISTORY_MAX_DAYS))
+    earliest = None
+    for data in loc_data.values():
+        bucket_times = data.get("bucket_times", [])
+        if not bucket_times:
+            continue
+        first = bucket_times[0]
+        if earliest is None or first < earliest:
+            earliest = first
+
+    if earliest is None:
+        return floor_start
+
+    return max(earliest - timedelta(hours=3), floor_start)
+
+
+def fetch_weather_history_series(start_dt: datetime, end_dt: datetime) -> Dict[str, object]:
+    if end_dt < start_dt:
+        return {"times": [], "map": {}}
+
+    params = {
+        "latitude": WEATHER_LAT,
+        "longitude": WEATHER_LON,
+        "hourly": ",".join(WEATHER_API_HOURLY_MAP.values()),
+        "wind_speed_unit": "ms",
+        "temperature_unit": "celsius",
+        "timezone": TZ_NAME,
+        "start_date": start_dt.date().isoformat(),
+        "end_date": end_dt.date().isoformat(),
+    }
+
+    try:
+        resp = requests.get(WEATHER_ARCHIVE_URL, params=params, timeout=20)
+        resp.raise_for_status()
+        payload = resp.json()
+        return parse_weather_hourly_payload(
+            payload,
+            min_dt=start_dt,
+            max_dt=end_dt + timedelta(hours=3),
+        )
+    except Exception:
+        return {"times": [], "map": {}}
+
+
+def fetch_weather_forecast_series(now: datetime) -> Dict[str, object]:
+    params = {
+        "latitude": WEATHER_LAT,
+        "longitude": WEATHER_LON,
+        "hourly": ",".join(WEATHER_API_HOURLY_MAP.values()),
+        "wind_speed_unit": "ms",
+        "temperature_unit": "celsius",
+        "timezone": TZ_NAME,
+        "forecast_days": max(1, WEATHER_FORECAST_DAYS),
+        "past_days": 2,
+    }
+
+    try:
+        resp = requests.get(WEATHER_URL, params=params, timeout=15)
+        resp.raise_for_status()
+        payload = resp.json()
+        return parse_weather_hourly_payload(payload, min_dt=now - timedelta(hours=12))
+    except Exception:
+        return {"times": [], "map": {}}
+
+
+def build_weather_hours_for_targets(
+    targets: List[datetime],
+    weather_series: Dict[str, object],
+) -> List[Dict[str, object]]:
+    times = weather_series.get("times", [])
+    weather_map = weather_series.get("map", {})
+    rows = []
+
+    for target in targets:
+        def value(key: str):
+            val = weather_value_at_or_before(times, weather_map, target, key)
+            if math.isnan(val):
+                return None
+            if key == "weather_code":
+                return int(round(val))
+            return round(float(val), 2)
+
+        rows.append(
+            {
+                "hour": target.hour,
+                "hourStart": target.isoformat(),
+                "tempC": value("temp_c"),
+                "feelsLikeC": value("feels_like_c"),
+                "precipMm": value("precip_mm"),
+                "rainMm": value("rain_mm"),
+                "snowCm": value("snow_cm"),
+                "windMps": value("wind_mps"),
+                "windGustMps": value("wind_gust_mps"),
+                "humidityPct": value("humidity_pct"),
+                "weatherCode": value("weather_code"),
+            }
+        )
+
+    return rows
+
+
+def build_weather_day_summary(weather_hours: List[Dict[str, object]]) -> Dict[str, object]:
+    temps = [row["tempC"] for row in weather_hours if row.get("tempC") is not None]
+    feels = [row["feelsLikeC"] for row in weather_hours if row.get("feelsLikeC") is not None]
+    precip = [row["precipMm"] for row in weather_hours if row.get("precipMm") is not None]
+    rain = [row["rainMm"] for row in weather_hours if row.get("rainMm") is not None]
+    snow = [row["snowCm"] for row in weather_hours if row.get("snowCm") is not None]
+    wind = [row["windMps"] for row in weather_hours if row.get("windMps") is not None]
+    gust = [row["windGustMps"] for row in weather_hours if row.get("windGustMps") is not None]
+    humidity = [row["humidityPct"] for row in weather_hours if row.get("humidityPct") is not None]
+    weather_codes = [row["weatherCode"] for row in weather_hours if row.get("weatherCode") is not None]
+
+    return {
+        "avgTempC": round(sum(temps) / len(temps), 2) if temps else None,
+        "avgFeelsLikeC": round(sum(feels) / len(feels), 2) if feels else None,
+        "totalPrecipMm": round(sum(precip), 2) if precip else None,
+        "totalRainMm": round(sum(rain), 2) if rain else None,
+        "totalSnowCm": round(sum(snow), 2) if snow else None,
+        "maxWindMps": round(max(wind), 2) if wind else None,
+        "maxWindGustMps": round(max(gust), 2) if gust else None,
+        "avgHumidityPct": round(sum(humidity) / len(humidity), 2) if humidity else None,
+        "weatherCodes": sorted(set(int(code) for code in weather_codes)) if weather_codes else [],
+    }
+
+
 def normalize_series(series: List[Dict[str, object]]) -> List[Tuple[datetime, int, int]]:
     entries: List[Tuple[datetime, int, int]] = []
     for item in series:
@@ -1486,19 +1823,31 @@ def build_forecast():
     expected_loc_ids = all_location_ids()
     onehot = build_onehot(expected_loc_ids)
 
+    history_start = weather_history_start(loc_data, now)
+    weather_history_series = fetch_weather_history_series(history_start, now)
+    future_weather_series = fetch_weather_forecast_series(now)
+    weather_series = merge_weather_series(weather_history_series, future_weather_series)
+    quality["weatherHistoryHours"] = len(weather_history_series.get("times", []))
+    quality["weatherForecastHours"] = len(future_weather_series.get("times", []))
+    quality["weatherMergedHours"] = len(weather_series.get("times", []))
+    quality["weatherAvailable"] = bool(weather_series.get("times"))
+
     model, model_meta, model_status, run_metrics = prepare_model(
         now=now,
         expected_loc_ids=expected_loc_ids,
         onehot=onehot,
         loc_data=loc_data,
         loc_samples=loc_samples,
+        weather_series=weather_series,
     )
 
     interval_profile = model_meta.get("residualProfile") if model_meta else None
 
     ctx = {
+        "now": now,
         "model": model,
         "interval_profile": interval_profile,
+        "weather_series": weather_series,
         "loc_data": loc_data,
         "onehot": onehot,
         "avg_dow_hour": avg_dow_hour,
@@ -1516,6 +1865,8 @@ def build_forecast():
 
         for day_date in week_dates:
             targets = get_targets_for_date(day_date)
+            day_weather = build_weather_hours_for_targets(targets, weather_series)
+            day_weather_summary = build_weather_day_summary(day_weather)
             day_categories = []
 
             for category in facility["categories"]:
@@ -1567,6 +1918,8 @@ def build_forecast():
                 {
                     "dayName": day_date.strftime("%A"),
                     "date": day_date.isoformat(),
+                    "weatherHours": day_weather,
+                    "weatherSummary": day_weather_summary,
                     "categories": day_categories,
                     "avoidWindows": avoid_windows_day,
                     "bestWindows": best_windows_day,
