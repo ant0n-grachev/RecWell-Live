@@ -3,10 +3,22 @@ import {Alert, Box, Button, CircularProgress, IconButton, Stack, Typography} fro
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import ModernCard from "../shared/components/ModernCard";
-import type {ForecastBand, ForecastDay} from "../lib/types/forecast";
+import type {ForecastDay} from "../lib/types/forecast";
+
+type CrowdBandLevel = "low" | "medium" | "peak";
+
+interface CrowdBand {
+    start: string;
+    end: string;
+    level: CrowdBandLevel;
+}
+
+type ForecastDayWithBands = ForecastDay & {
+    crowdBands?: CrowdBand[];
+};
 
 interface Props {
-    day: ForecastDay | null;
+    day: ForecastDayWithBands | null;
     dayOffset: number;
     canPrev: boolean;
     canNext: boolean;
@@ -17,7 +29,7 @@ interface Props {
 }
 
 const CHICAGO_TIMEZONE = "America/Chicago";
-const BAND_LEVEL_ORDER: ForecastBand["level"][] = ["low", "medium", "peak"];
+const BAND_LEVEL_ORDER: CrowdBandLevel[] = ["low", "medium", "peak"];
 
 const formatTime = (value?: string): string => {
     if (!value) return "N/A";
@@ -37,13 +49,13 @@ const formatRange = (start?: string, end?: string): string => {
     return `${formattedStart} – ${formattedEnd}`;
 };
 
-const BAND_STYLES: Record<ForecastBand["level"], {label: string; color: string; bg: string}> = {
+const BAND_STYLES: Record<CrowdBandLevel, {label: string; color: string; bg: string}> = {
     low: {label: "LOW CROWD", color: "#1b5e20", bg: "rgba(46, 125, 50, 0.12)"},
     medium: {label: "MEDIUM CROWD", color: "#8a6d00", bg: "rgba(245, 158, 11, 0.18)"},
     peak: {label: "PEAK CROWD", color: "#b71c1c", bg: "rgba(211, 47, 47, 0.12)"},
 };
 
-const sortBands = (bands: ForecastBand[]): ForecastBand[] =>
+const sortBands = (bands: CrowdBand[]): CrowdBand[] =>
     bands
         .slice()
         .sort((a, b) => {
@@ -54,15 +66,8 @@ const sortBands = (bands: ForecastBand[]): ForecastBand[] =>
             if (Number.isNaN(right)) return -1;
             return left - right;
         });
-const renderBands = (bands: ForecastBand[]) => {
-    const sorted = bands.slice().sort((a, b) => {
-        const left = Date.parse(a.start || "");
-        const right = Date.parse(b.start || "");
-        if (Number.isNaN(left) && Number.isNaN(right)) return 0;
-        if (Number.isNaN(left)) return 1;
-        if (Number.isNaN(right)) return -1;
-        return left - right;
-    });
+const renderBands = (bands: CrowdBand[]) => {
+    const sorted = sortBands(bands);
 
     if (sorted.length === 0) {
         return (
@@ -134,9 +139,9 @@ export default function ForecastWindowsCard({
     isLoading,
     error,
 }: Props) {
-    const [selectedLevels, setSelectedLevels] = useState<ForecastBand["level"][]>([]);
+    const [selectedLevels, setSelectedLevels] = useState<CrowdBandLevel[]>([]);
 
-    const toggleLevel = (level: ForecastBand["level"]) => {
+    const toggleLevel = (level: CrowdBandLevel) => {
         setSelectedLevels((prev) => (
             prev.includes(level)
                 ? prev.filter((item) => item !== level)
