@@ -1,5 +1,6 @@
 import {Typography, Stack, Box} from "@mui/material";
 import type {Location} from "../lib/types/facility";
+import type {ForecastHour} from "../lib/types/forecast";
 import ModernCard from "../shared/components/ModernCard";
 import {clampPercent, getOccupancyColor} from "../shared/utils/styles";
 
@@ -7,9 +8,71 @@ interface Props {
     title: string;
     ids: number[];
     locations: Location[];
+    forecast?: ForecastHour[];
 }
 
-export default function SectionSummary({title, ids, locations}: Props) {
+const renderForecastStrip = (forecast: ForecastHour[] | undefined) => {
+    if (!forecast || forecast.length === 0) return null;
+
+    const first = forecast[0]?.expectedCount ?? 0;
+    const last = forecast[Math.min(2, forecast.length - 1)]?.expectedCount ?? first;
+    const trendArrow = last > first ? "↑" : last < first ? "↓" : "→";
+
+    return (
+        <Box
+            sx={{
+                mt: 1,
+                p: 1,
+                borderRadius: 2,
+                border: "1px solid",
+                borderColor: "divider",
+                bgcolor: "background.default",
+            }}
+        >
+            <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4}}
+            >
+                Next 3h forecast {trendArrow}
+            </Typography>
+
+            <Stack direction="row" spacing={0.75} sx={{mt: 0.75, flexWrap: "wrap", rowGap: 0.75}}>
+                {forecast.slice(0, 3).map((point, index) => {
+                    return (
+                        <Box
+                            key={`${point.hourStart}-${index}`}
+                            sx={{
+                                px: 1.1,
+                                py: 0.5,
+                                borderRadius: 999,
+                                border: "1px solid",
+                                borderColor: "divider",
+                                bgcolor: "background.paper",
+                            }}
+                        >
+                            <Stack direction="row" spacing={0.5} alignItems="center">
+                                <Typography variant="body2" fontWeight={700} color="text.primary">
+                                    +{index + 1}h
+                                </Typography>
+                                <Typography variant="body2" fontWeight={700} color="text.secondary">
+                                    {Math.max(0, Math.round(point.expectedCount))}
+                                </Typography>
+                            </Stack>
+                        </Box>
+                    );
+                })}
+            </Stack>
+        </Box>
+    );
+};
+
+export default function SectionSummary({
+    title,
+    ids,
+    locations,
+    forecast,
+}: Props) {
     const list = locations
         .filter((l) => ids.includes(l.locationId))
         .sort((a, b) => ids.indexOf(a.locationId) - ids.indexOf(b.locationId));
@@ -53,6 +116,8 @@ export default function SectionSummary({title, ids, locations}: Props) {
                     <Typography sx={{color: percentColor, fontWeight: 600}}>
                         {percent}% full
                     </Typography>
+
+                    {renderForecastStrip(forecast)}
                 </>
             )}
 
@@ -66,6 +131,8 @@ export default function SectionSummary({title, ids, locations}: Props) {
                     <Typography sx={{color: percentColor, fontWeight: 600}}>
                         {percent}% full
                     </Typography>
+
+                    {renderForecastStrip(forecast)}
 
                     <Stack spacing={1} sx={{mt: 1}}>
                         {list.map((loc) => {

@@ -1,4 +1,4 @@
-import {useCallback, useEffect, useState} from "react";
+import {useCallback, useEffect, useMemo, useState} from "react";
 import {
     Alert,
     Box,
@@ -16,7 +16,9 @@ import FacilitySelector from "../facilities/FacilitySelector";
 import OccupancyCard from "../facilities/OccupancyCard";
 import SectionSummary from "../facilities/SectionSummary";
 import SectionSummaryOther from "../facilities/SectionSummaryOther";
+import ForecastWindowsCard from "../facilities/ForecastWindowsCard";
 import {fetchFacility} from "../lib/api/recwellParser";
+import {fetchForecastDays} from "../lib/api/forecastParser";
 import {
     FACILITY_DASHBOARD_CONFIG,
     FACILITY_KNOWN_IDS,
@@ -26,11 +28,13 @@ import {
 } from "../facilities/constants";
 import {getFacilityCache, setFacilityCache} from "../lib/storage/facilityCache";
 import type {FacilityId, FacilityPayload} from "../lib/types/facility";
+import type {ForecastDay, ForecastHour} from "../lib/types/forecast";
 
 const FACILITY_STORAGE_KEY = "recwell:selectedFacility";
 const AUTO_REFRESH_INTERVAL_MS = 15 * 60 * 1000;
 const AUTO_REFRESH_CHECK_INTERVAL_MS = 60 * 1000;
 const MANUAL_REFRESH_COOLDOWN_MS = 3000;
+const FORECAST_VISIBLE_SECTIONS = new Set(["fitness floors", "basketball courts"]);
 
 const getStoredFacility = (): FacilityId => {
     if (typeof window === "undefined") return 1186;
@@ -51,20 +55,66 @@ const getLatestTimestamp = (payload: FacilityPayload | null | undefined): string
     return latest;
 };
 
-const renderSection = (section: SectionConfig, locations: FacilityPayload["locations"]) => (
-    <SectionSummary key={section.title} title={section.title} ids={[...section.ids]} locations={locations}/>
+const normalizeSectionTitle = (title: string): string =>
+    title.replace(/^[^a-zA-Z0-9]+/, "").replace(/\s+/g, " ").trim().toLowerCase();
+
+const buildSectionForecastMap = (day: ForecastDay | null): Record<string, ForecastHour[]> => {
+    if (!day?.categories) return {};
+
+    const nowTs = Date.now();
+    const sectionMap: Record<string, ForecastHour[]> = {};
+
+    for (const category of day.categories) {
+        const key = normalizeSectionTitle(category.title);
+        if (!FORECAST_VISIBLE_SECTIONS.has(key)) {
+            continue;
+        }
+
+        const sorted = [...(category.hours ?? [])].sort(
+            (a, b) => Date.parse(a.hourStart) - Date.parse(b.hourStart)
+        );
+        sectionMap[key] = sorted
+            .filter((hour) => Date.parse(hour.hourStart) > nowTs)
+            .slice(0, 3);
+    }
+
+    return sectionMap;
+};
+
+const renderSection = (
+    section: SectionConfig,
+    locations: FacilityPayload["locations"],
+    forecastMap: Record<string, ForecastHour[]>
+) => (
+    <SectionSummary
+        key={section.title}
+        title={section.title}
+        ids={[...section.ids]}
+        locations={locations}
+        forecast={forecastMap[normalizeSectionTitle(section.title)]}
+    />
 );
 
-const renderSectionLayout = (layout: SectionLayout, locations: FacilityPayload["locations"], index: number) => {
+const renderSectionLayout = (
+    layout: SectionLayout,
+    locations: FacilityPayload["locations"],
+    index: number,
+    forecastMap: Record<string, ForecastHour[]>
+) => {
     if (!isSectionRow(layout)) {
-        return renderSection(layout, locations);
+        return renderSection(layout, locations, forecastMap);
     }
 
     return (
         <Stack key={`row-${index}`} direction={{xs: "column", sm: "row"}} spacing={2} alignItems="stretch">
             {layout.map((section) => (
                 <Box key={section.title} sx={{flex: 1, minWidth: 0}}>
-                    <SectionSummary title={section.title} ids={[...section.ids]} locations={locations}/>
+                    <SectionSummary
+                        title={section.title}
+                        ids={[...section.ids]}
+                        locations={locations}
+                        forecast={forecastMap[normalizeSectionTitle(section.title)]}
+                    />
                 </Box>
             ))}
         </Stack>
@@ -80,6 +130,10 @@ export default function App() {
     const [freshness, setFreshness] = useState<"live" | "cached" | null>(null);
     const [lastAutoRefresh, setLastAutoRefresh] = useState(() => Date.now());
     const [lastManualRefresh, setLastManualRefresh] = useState(0);
+    const [forecastDays, setForecastDays] = useState<ForecastDay[]>([]);
+    const [forecastDayOffset, setForecastDayOffset] = useState(0);
+    const [forecastError, setForecastError] = useState<string | null>(null);
+    const [isForecastLoading, setIsForecastLoading] = useState(false);
 
     useEffect(() => {
         if (typeof window === "undefined") return;
@@ -145,6 +199,40 @@ export default function App() {
         };
     }, [facility, refreshKey]);
 
+    useEffect(() => {
+        const controller = new AbortController();
+        let isCancelled = false;
+
+        const loadForecast = async () => {
+            setIsForecastLoading(true);
+            setForecastError(null);
+
+            try {
+                const days = await fetchForecastDays(facility, controller.signal);
+                if (isCancelled || controller.signal.aborted) return;
+                setForecastDays(days);
+                setForecastDayOffset(0);
+            } catch (loadError) {
+                if (isCancelled || controller.signal.aborted) return;
+                console.error("Failed to fetch forecast data", loadError);
+                setForecastDays([]);
+                setForecastDayOffset(0);
+                setForecastError("Forecast unavailable right now.");
+            } finally {
+                if (!isCancelled && !controller.signal.aborted) {
+                    setIsForecastLoading(false);
+                }
+            }
+        };
+
+        void loadForecast();
+
+        return () => {
+            isCancelled = true;
+            controller.abort();
+        };
+    }, [facility, refreshKey]);
+
     const triggerRefresh = useCallback((action: () => void) => {
         setIsLoading(true);
         setError(null);
@@ -170,6 +258,7 @@ export default function App() {
     const handleFacilitySelect = (next: FacilityId) => {
         if (next === facility) return;
         setLastManualRefresh(0);
+        setForecastDayOffset(0);
         triggerRefresh(() => setFacility(next));
     };
 
@@ -193,6 +282,24 @@ export default function App() {
 
     const dashboardConfig = FACILITY_DASHBOARD_CONFIG[facility];
     const knownIds = FACILITY_KNOWN_IDS[facility];
+    const visibleForecastDays = useMemo(
+        () => forecastDays.slice(0, 4),
+        [forecastDays]
+    );
+    const todayForecastDay = visibleForecastDays[0] ?? null;
+    const selectedForecastDay =
+        visibleForecastDays[forecastDayOffset] ?? todayForecastDay;
+
+    useEffect(() => {
+        if (forecastDayOffset > Math.max(0, visibleForecastDays.length - 1)) {
+            setForecastDayOffset(0);
+        }
+    }, [forecastDayOffset, visibleForecastDays.length]);
+
+    const sectionForecastMap = useMemo(
+        () => buildSectionForecastMap(todayForecastDay),
+        [todayForecastDay]
+    );
 
     const formattedCachedTime = (() => {
         if (!lastUpdated) return null;
@@ -274,6 +381,21 @@ export default function App() {
                             isLoading={isLoading}
                         />
 
+                        <ForecastWindowsCard
+                            day={selectedForecastDay}
+                            dayOffset={forecastDayOffset}
+                            canPrev={forecastDayOffset > 0}
+                            canNext={forecastDayOffset < Math.min(3, visibleForecastDays.length - 1)}
+                            onPrev={() => setForecastDayOffset((prev) => Math.max(0, prev - 1))}
+                            onNext={() =>
+                                setForecastDayOffset((prev) =>
+                                    Math.min(Math.min(3, visibleForecastDays.length - 1), prev + 1)
+                                )
+                            }
+                            isLoading={isForecastLoading}
+                            error={forecastError}
+                        />
+
                         {freshness === "cached" && (
                             <Alert severity="info" variant="outlined" sx={{borderRadius: 2}}>
                                 Showing cached data
@@ -283,7 +405,7 @@ export default function App() {
                         )}
 
                         {dashboardConfig.sections.map((layout, index) =>
-                            renderSectionLayout(layout, data.locations, index)
+                            renderSectionLayout(layout, data.locations, index, sectionForecastMap)
                         )}
 
                         <SectionSummaryOther
