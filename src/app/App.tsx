@@ -58,7 +58,22 @@ const getLatestTimestamp = (payload: FacilityPayload | null | undefined): string
 const normalizeSectionTitle = (title: string): string =>
     title.replace(/^[^a-zA-Z0-9]+/, "").replace(/\s+/g, " ").trim().toLowerCase();
 
-const buildSectionForecastMap = (day: ForecastDay | null): Record<string, ForecastHour[]> => {
+const getDaysAgoFromIso = (lastUpdated: string | null | undefined): number | null => {
+    if (!lastUpdated) return null;
+    const parsed = new Date(lastUpdated);
+    if (Number.isNaN(parsed.getTime())) return null;
+
+    const now = new Date();
+    const dayStart = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const diffMs = dayStart(now).getTime() - dayStart(parsed).getTime();
+    return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+};
+
+const buildSectionForecastMap = (
+    day: ForecastDay | null,
+    hideForecast: boolean
+): Record<string, ForecastHour[]> => {
+    if (hideForecast) return {};
     if (!day?.categories) return {};
 
     const nowTs = Date.now();
@@ -271,6 +286,8 @@ export default function App() {
         : 0;
 
     const lastUpdated = getLatestTimestamp(data);
+    const daysAgo = getDaysAgoFromIso(lastUpdated);
+    const showStaleNotice = !isLoading && typeof daysAgo === "number" && daysAgo >= 1;
 
     const manualRefresh = () => {
         if (isLoading) return;
@@ -297,8 +314,8 @@ export default function App() {
     }, [forecastDayOffset, visibleForecastDays.length]);
 
     const sectionForecastMap = useMemo(
-        () => buildSectionForecastMap(todayForecastDay),
-        [todayForecastDay]
+        () => buildSectionForecastMap(todayForecastDay, showStaleNotice),
+        [todayForecastDay, showStaleNotice]
     );
 
     const formattedCachedTime = (() => {
