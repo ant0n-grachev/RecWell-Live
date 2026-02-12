@@ -1,8 +1,9 @@
-import {Alert, Box, CircularProgress, IconButton, Stack, Typography} from "@mui/material";
+import {useMemo, useState} from "react";
+import {Alert, Box, Button, CircularProgress, IconButton, Stack, Typography} from "@mui/material";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import ModernCard from "../shared/components/ModernCard";
-import type {ForecastDay, ForecastWindow} from "../lib/types/forecast";
+import type {ForecastBand, ForecastDay} from "../lib/types/forecast";
 
 interface Props {
     day: ForecastDay | null;
@@ -16,6 +17,7 @@ interface Props {
 }
 
 const CHICAGO_TIMEZONE = "America/Chicago";
+const BAND_LEVEL_ORDER: ForecastBand["level"][] = ["low", "medium", "peak"];
 
 const formatTime = (value?: string): string => {
     if (!value) return "N/A";
@@ -28,14 +30,20 @@ const formatTime = (value?: string): string => {
     });
 };
 
-const formatWindow = (window: ForecastWindow): string => {
-    const start = formatTime(window.start);
-    const end = formatTime(window.end);
-    return `${start}-${end}`;
+const formatRange = (start?: string, end?: string): string => {
+    const formattedStart = formatTime(start);
+    const formattedEnd = formatTime(end);
+    return `${formattedStart}-${formattedEnd}`;
 };
 
-const renderWindows = (title: string, color: string, windows?: ForecastWindow[]) => {
-    const sorted = (windows ?? [])
+const BAND_STYLES: Record<ForecastBand["level"], {label: string; color: string; bg: string}> = {
+    low: {label: "LOW CROWD", color: "#1b5e20", bg: "rgba(46, 125, 50, 0.12)"},
+    medium: {label: "MEDIUM CROWD", color: "#8a6d00", bg: "rgba(245, 158, 11, 0.18)"},
+    peak: {label: "PEAK CROWD", color: "#b71c1c", bg: "rgba(211, 47, 47, 0.12)"},
+};
+
+const sortBands = (bands: ForecastBand[]): ForecastBand[] =>
+    bands
         .slice()
         .sort((a, b) => {
             const left = Date.parse(a.start || "");
@@ -45,28 +53,74 @@ const renderWindows = (title: string, color: string, windows?: ForecastWindow[])
             if (Number.isNaN(right)) return -1;
             return left - right;
         });
-    return (
-        <Box>
-            <Typography
-                variant="body2"
-                sx={{fontWeight: 700, textTransform: "uppercase", color}}
-            >
-                {title}
+const renderBands = (bands: ForecastBand[]) => {
+    const sorted = bands.slice().sort((a, b) => {
+        const left = Date.parse(a.start || "");
+        const right = Date.parse(b.start || "");
+        if (Number.isNaN(left) && Number.isNaN(right)) return 0;
+        if (Number.isNaN(left)) return 1;
+        if (Number.isNaN(right)) return -1;
+        return left - right;
+    });
+
+    if (sorted.length === 0) {
+        return (
+            <Typography variant="body2" sx={{fontWeight: 600}} color="text.secondary">
+                No matching intervals.
             </Typography>
-            <Stack spacing={0.5} sx={{mt: 0.5}}>
-                {sorted.length === 0 && (
-                    <Typography variant="body2" sx={{fontWeight: 600}} color="text.secondary">
-                        None
-                    </Typography>
-                )}
-                {sorted.map((window, index) => (
-                    <Typography key={`${title}-${index}`} variant="body2" sx={{fontWeight: 600}}>
-                        {formatWindow(window)}
-                    </Typography>
-                ))}
-            </Stack>
-        </Box>
+        );
+    }
+
+    return (
+        <Stack spacing={0.8}>
+            {sorted.map((band, index) => {
+                const style = BAND_STYLES[band.level] ?? BAND_STYLES.medium;
+                return (
+                    <Box
+                        key={`${band.start}-${band.end}-${index}`}
+                        sx={{
+                            p: 1,
+                            borderRadius: 1.5,
+                            border: "1px solid",
+                            borderColor: "divider",
+                            bgcolor: "background.default",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: 1,
+                            flexWrap: "wrap",
+                        }}
+                    >
+                        <Typography variant="body2" sx={{fontWeight: 700, color: "text.primary"}}>
+                            {formatRange(band.start, band.end)}
+                        </Typography>
+                        <Box
+                            sx={{
+                                px: 1,
+                                py: 0.25,
+                                borderRadius: 999,
+                                bgcolor: style.bg,
+                                color: style.color,
+                            }}
+                        >
+                            <Typography
+                                variant="caption"
+                                sx={{fontWeight: 800, letterSpacing: 0.3, textTransform: "uppercase"}}
+                            >
+                                {style.label}
+                            </Typography>
+                        </Box>
+                    </Box>
+                );
+            })}
+        </Stack>
     );
+};
+
+const formatWindow = (window: {start?: string; end?: string}): string => {
+    const start = formatTime(window.start);
+    const end = formatTime(window.end);
+    return `${start}-${end}`;
 };
 
 export default function ForecastWindowsCard({
@@ -79,6 +133,29 @@ export default function ForecastWindowsCard({
     isLoading,
     error,
 }: Props) {
+    const [selectedLevels, setSelectedLevels] = useState<ForecastBand["level"][]>([]);
+
+    const toggleLevel = (level: ForecastBand["level"]) => {
+        setSelectedLevels((prev) => (
+            prev.includes(level)
+                ? prev.filter((item) => item !== level)
+                : [...prev, level]
+        ));
+    };
+
+    const displayBands = useMemo(() => {
+        const allBands = day?.crowdBands ?? [];
+        const showDefault =
+            selectedLevels.length === 0 || selectedLevels.length === BAND_LEVEL_ORDER.length;
+
+        if (showDefault) {
+            return sortBands(allBands);
+        }
+
+        const selected = new Set(selectedLevels);
+        return sortBands(allBands).filter((band) => selected.has(band.level));
+    }, [day?.crowdBands, selectedLevels]);
+
     const dateLabel = day?.date ? ` (${day.date})` : "";
     const title =
         dayOffset === 0
@@ -131,10 +208,56 @@ export default function ForecastWindowsCard({
             )}
 
             {!isLoading && !error && day && (
-                <Stack spacing={1.5} sx={{mt: 1}}>
-                    {renderWindows("Low crowd", "success.main", day.bestWindows)}
-                    {renderWindows("Peak crowd", "error.main", day.avoidWindows)}
-                </Stack>
+                <Box sx={{mt: 1}}>
+                    {day.crowdBands && day.crowdBands.length > 0 ? (
+                        <>
+                            <Stack direction="row" spacing={0.75} sx={{mb: 1, flexWrap: "wrap", rowGap: 0.75}}>
+                            {BAND_LEVEL_ORDER.map((level) => {
+                                const active = selectedLevels.includes(level);
+                                const style = BAND_STYLES[level];
+                                    return (
+                                        <Button
+                                            key={level}
+                                            size="small"
+                                            variant={active ? "contained" : "outlined"}
+                                            onClick={() => toggleLevel(level)}
+                                            sx={{
+                                                textTransform: "uppercase",
+                                                fontWeight: 700,
+                                                borderRadius: 999,
+                                                px: 1.25,
+                                                minWidth: 0,
+                                                borderColor: style.color,
+                                                color: active ? style.color : "text.primary",
+                                                bgcolor: active ? style.bg : "transparent",
+                                                "&:hover": {
+                                                    borderColor: style.color,
+                                                    bgcolor: style.bg,
+                                                },
+                                            }}
+                                        >
+                                            {style.label.replace(" CROWD", "")}
+                                        </Button>
+                                    );
+                                })}
+                            </Stack>
+                            {renderBands(displayBands)}
+                        </>
+                    ) : (
+                        <Stack spacing={0.5}>
+                            {(day.bestWindows ?? []).map((window, index) => (
+                                <Typography key={`low-${index}`} variant="body2" sx={{fontWeight: 600}}>
+                                    {formatWindow(window)} (LOW CROWD)
+                                </Typography>
+                            ))}
+                            {(day.avoidWindows ?? []).map((window, index) => (
+                                <Typography key={`peak-${index}`} variant="body2" sx={{fontWeight: 600}}>
+                                    {formatWindow(window)} (PEAK CROWD)
+                                </Typography>
+                            ))}
+                        </Stack>
+                    )}
+                </Box>
             )}
         </ModernCard>
     );

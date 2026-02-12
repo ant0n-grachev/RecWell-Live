@@ -15,7 +15,9 @@ import xgboost as xgb
 TZ_NAME = "America/Chicago"
 TZ = pytz.timezone(TZ_NAME)
 
-RESAMPLE_MINUTES = int(os.getenv("RESAMPLE_MINUTES", "15"))
+RESAMPLE_MINUTES = 15
+WINDOW_RESAMPLE_MINUTES = 30
+WINDOW_MERGE_GAP_MIN = 60
 MIN_SAMPLES_PER_LOC = int(os.getenv("MIN_SAMPLES_PER_LOC", "80"))
 MIN_SAMPLES_PER_HOUR_TOTAL = int(os.getenv("MIN_SAMPLES_PER_HOUR_TOTAL", "5"))
 MIN_TRAIN_SAMPLES = int(os.getenv("MIN_TRAIN_SAMPLES", "300"))
@@ -33,7 +35,7 @@ FORCE_RETRAIN = os.getenv("MODEL_FORCE_RETRAIN", "0").strip().lower() in (
     "yes",
     "on",
 )
-MODEL_SCHEMA_VERSION = 4
+MODEL_SCHEMA_VERSION = 6
 
 INTERVAL_MIN_SAMPLES_PER_HOUR = int(os.getenv("INTERVAL_MIN_SAMPLES_PER_HOUR", "30"))
 INTERVAL_Q_LOW = float(os.getenv("INTERVAL_Q_LOW", "0.10"))
@@ -313,8 +315,8 @@ def parse_observed_at_value(raw_value) -> Optional[datetime]:
 
 
 def model_feature_count(loc_count: int) -> int:
-    # 13 time/cycle + 9 lag/recency + (9 weather * 3 stats) + (3 rolling weather) + loc one-hot
-    return 52 + loc_count
+    # 17 time/cycle + 9 lag/recency + (9 weather * 3 stats) + (3 rolling weather) + loc one-hot
+    return 56 + loc_count
 
 
 def last_before(times: List[datetime], values: List[float], target: datetime) -> Tuple[float, float]:
@@ -326,24 +328,32 @@ def last_before(times: List[datetime], values: List[float], target: datetime) ->
 
 def build_time_features(dt: datetime) -> List[float]:
     hour = dt.hour
+    minute = dt.minute
+    quarter_slot = minute // max(1, RESAMPLE_MINUTES)
     dow = dt.weekday()
     month = dt.month
     day_of_year = dt.timetuple().tm_yday
     is_weekend = 1 if dow >= 5 else 0
 
     hour_rad = 2 * math.pi * hour / 24
+    minute_of_day = hour * 60 + minute
+    minute_of_day_rad = 2 * math.pi * minute_of_day / 1440.0
     dow_rad = 2 * math.pi * dow / 7
     month_rad = 2 * math.pi * (month - 1) / 12
     doy_rad = 2 * math.pi * day_of_year / 365.25
 
     return [
         float(hour),
+        float(minute),
+        float(quarter_slot),
         float(dow),
         float(month),
         float(day_of_year),
         float(is_weekend),
         math.sin(hour_rad),
         math.cos(hour_rad),
+        math.sin(minute_of_day_rad),
+        math.cos(minute_of_day_rad),
         math.sin(dow_rad),
         math.cos(dow_rad),
         math.sin(month_rad),
@@ -1289,32 +1299,30 @@ def apply_spike_adjustment_to_category_hours(
     return adjusted
 
 
-def build_total_series_from_categories(
-    day_categories: List[Dict[str, object]],
+def build_total_series_for_targets(
+    loc_ids: Iterable[int],
     targets: List[datetime],
-    now: datetime,
+    ctx: Dict[str, object],
 ) -> List[Dict[str, object]]:
     rows = []
+    now = ctx.get("now")
 
-    for idx, target in enumerate(targets):
-        sum_p10 = 0
-        sum_p50 = 0
-        sum_p90 = 0
+    for target in targets:
+        sum_p10 = 0.0
+        sum_p50 = 0.0
+        sum_p90 = 0.0
         samples = 0
 
-        for category in day_categories:
-            hours = category.get("hours", [])
-            if idx >= len(hours):
-                continue
-            point = hours[idx]
-            count = int(point.get("expectedCount", 0))
-            count_p10 = int(point.get("expectedCountP10", count))
-            count_p90 = int(point.get("expectedCountP90", count))
-
-            sum_p10 += count_p10
-            sum_p50 += count
-            sum_p90 += count_p90
-            samples += int(point.get("sampleCount", 0))
+        for loc_id in loc_ids:
+            result = estimate_location(
+                loc_id,
+                target,
+                ctx,
+            )
+            sum_p10 += result["countP10"]
+            sum_p50 += result["countP50"]
+            sum_p90 += result["countP90"]
+            samples += int(result["sampleCount"])
 
         rows.append(
             {
@@ -1325,7 +1333,7 @@ def build_total_series_from_categories(
                 "expectedTotalP50": round_count(sum_p50),
                 "expectedTotalP90": round_count(sum_p90),
                 "sampleCount": samples,
-                "isFuture": target > now,
+                "isFuture": bool(now and target > now),
             }
         )
 
@@ -1381,6 +1389,26 @@ def get_targets_for_date(day_date: date) -> List[datetime]:
     for hour in range(start_hour, end_hour + 1):
         naive = datetime(day_date.year, day_date.month, day_date.day, hour, 0, 0)
         targets.append(TZ.localize(naive))
+    return targets
+
+
+def get_window_targets_for_date(day_date: date) -> List[datetime]:
+    start_hour = max(0, min(23, FORECAST_DAY_START_HOUR))
+    end_hour = max(0, min(23, FORECAST_DAY_END_HOUR))
+    if end_hour < start_hour:
+        start_hour, end_hour = end_hour, start_hour
+
+    start_dt = TZ.localize(datetime(day_date.year, day_date.month, day_date.day, start_hour, 0, 0))
+    end_exclusive = TZ.localize(
+        datetime(day_date.year, day_date.month, day_date.day, end_hour, 0, 0)
+    ) + timedelta(hours=1)
+
+    step = timedelta(minutes=max(1, WINDOW_RESAMPLE_MINUTES))
+    targets = []
+    current = start_dt
+    while current < end_exclusive:
+        targets.append(current)
+        current += step
     return targets
 
 
@@ -1587,6 +1615,34 @@ def normalize_series(series: List[Dict[str, object]]) -> List[Tuple[datetime, in
     return entries
 
 
+def infer_series_step_minutes(series: List[Dict[str, object]]) -> int:
+    if len(series) < 2:
+        return max(1, RESAMPLE_MINUTES)
+
+    times: List[datetime] = []
+    for item in series:
+        raw = item.get("hourStart")
+        if not raw:
+            continue
+        try:
+            times.append(datetime.fromisoformat(str(raw)))
+        except Exception:
+            continue
+
+    if len(times) < 2:
+        return max(1, RESAMPLE_MINUTES)
+
+    diffs = []
+    for idx in range(len(times) - 1):
+        diff_min = int(round((times[idx + 1] - times[idx]).total_seconds() / 60.0))
+        if diff_min > 0:
+            diffs.append(diff_min)
+
+    if not diffs:
+        return max(1, RESAMPLE_MINUTES)
+    return max(1, min(diffs))
+
+
 def compute_range_metrics(
     series_entries: List[Tuple[datetime, int, int]],
     start: datetime,
@@ -1632,7 +1688,7 @@ def merge_windows_with_series(
     ranges.sort(key=lambda row: row[0])
     merged_ranges = []
     cur_start, cur_end = ranges[0]
-    allowed_gap = timedelta(hours=1)
+    allowed_gap = timedelta(minutes=WINDOW_MERGE_GAP_MIN)
 
     for start, end in ranges[1:]:
         if start <= (cur_end + allowed_gap):
@@ -1647,17 +1703,19 @@ def merge_windows_with_series(
     series_entries = normalize_series(series)
     merged = []
     for start, end in merged_ranges:
-        total_sum, avg, min_samples, hours = compute_range_metrics(series_entries, start, end)
+        total_sum, avg, min_samples, points = compute_range_metrics(series_entries, start, end)
+        window_hours = round((end - start).total_seconds() / 3600.0, 2)
         merged.append(
             {
                 "start": start.isoformat(),
                 "end": end.isoformat(),
                 "startHour": start.hour,
                 "endHour": end.hour,
-                "windowHours": hours,
+                "windowHours": window_hours,
                 "expectedTotal": total_sum,
                 "expectedAvg": avg,
                 "sampleCountMin": min_samples,
+                "windowPoints": points,
             }
         )
 
@@ -1741,16 +1799,17 @@ def window_indices_for_center(index: int, window: int, length: int) -> Tuple[int
 def build_windows_for_indices(
     series: List[Dict[str, object]],
     indices: List[int],
-    window_hours: int,
+    window_points: int,
 ) -> List[Dict[str, object]]:
     if not series or not indices:
         return []
 
     windows = {}
     n = len(series)
+    step_minutes = infer_series_step_minutes(series)
 
     for idx in indices:
-        start_idx, end_idx = window_indices_for_center(idx, window_hours, n)
+        start_idx, end_idx = window_indices_for_center(idx, window_points, n)
         window_slice = series[start_idx:end_idx]
         if not window_slice:
             continue
@@ -1760,17 +1819,19 @@ def build_windows_for_indices(
 
         start_iso = window_slice[0]["hourStart"]
         start_dt = datetime.fromisoformat(start_iso)
-        end_dt = start_dt + timedelta(hours=len(window_slice))
+        end_dt = start_dt + timedelta(minutes=step_minutes * len(window_slice))
+        window_hours = round((step_minutes * len(window_slice)) / 60.0, 2)
 
         windows[start_iso] = {
             "start": start_iso,
             "end": end_dt.isoformat(),
             "startHour": window_slice[0]["hour"],
             "endHour": end_dt.hour,
-            "windowHours": len(window_slice),
+            "windowHours": window_hours,
             "expectedTotal": total_sum,
             "expectedAvg": round(total_sum / len(window_slice), 2),
             "sampleCountMin": min_samples,
+            "windowPoints": len(window_slice),
             "centerHour": series[idx]["hour"],
         }
 
@@ -1796,10 +1857,141 @@ def find_peak_and_low_windows(
     if not low_indices:
         low_indices = detect_extrema_indices(series, smoothed, mean, std, 0.0, "low")
 
+    step_minutes = infer_series_step_minutes(series)
+    window_points = max(1, int(round((window_hours * 60.0) / step_minutes)))
+
     return (
-        build_windows_for_indices(series, peak_indices, window_hours),
-        build_windows_for_indices(series, low_indices, window_hours),
+        build_windows_for_indices(series, peak_indices, window_points),
+        build_windows_for_indices(series, low_indices, window_points),
     )
+
+
+def parse_window_ranges(windows: List[Dict[str, object]]) -> List[Tuple[datetime, datetime]]:
+    ranges: List[Tuple[datetime, datetime]] = []
+    for window in windows:
+        raw_start = window.get("start")
+        raw_end = window.get("end")
+        if not raw_start or not raw_end:
+            continue
+        try:
+            start = datetime.fromisoformat(str(raw_start))
+            end = datetime.fromisoformat(str(raw_end))
+        except Exception:
+            continue
+        if end > start:
+            ranges.append((start, end))
+    return ranges
+
+
+def build_crowd_bands(
+    series: List[Dict[str, object]],
+    low_windows: List[Dict[str, object]],
+    peak_windows: List[Dict[str, object]],
+) -> List[Dict[str, object]]:
+    if not series:
+        return []
+
+    step_minutes = infer_series_step_minutes(series)
+    step = timedelta(minutes=step_minutes)
+
+    low_ranges = parse_window_ranges(low_windows)
+    peak_ranges = parse_window_ranges(peak_windows)
+    entries = normalize_series(series)
+    if not entries:
+        return []
+
+    def in_ranges(ts: datetime, ranges: List[Tuple[datetime, datetime]]) -> bool:
+        for start, end in ranges:
+            if start <= ts < end:
+                return True
+        return False
+
+    labels: List[Tuple[datetime, str]] = []
+    for ts, _expected, _samples in entries:
+        label = "medium"
+        # Priority: peak > low, so bands can never overlap.
+        if in_ranges(ts, peak_ranges):
+            label = "peak"
+        elif in_ranges(ts, low_ranges):
+            label = "low"
+        labels.append((ts, label))
+
+    if not labels:
+        return []
+
+    bands: List[Dict[str, object]] = []
+    cur_start, cur_label = labels[0]
+    prev_ts = labels[0][0]
+
+    for ts, label in labels[1:]:
+        if label != cur_label:
+            end = prev_ts + step
+            bands.append(
+                {
+                    "start": cur_start.isoformat(),
+                    "end": end.isoformat(),
+                    "level": cur_label,
+                }
+            )
+            cur_start = ts
+            cur_label = label
+        prev_ts = ts
+
+    bands.append(
+        {
+            "start": cur_start.isoformat(),
+            "end": (prev_ts + step).isoformat(),
+            "level": cur_label,
+        }
+    )
+
+    return bands
+
+
+def build_windows_from_bands(
+    bands: List[Dict[str, object]],
+    level: str,
+    series: List[Dict[str, object]],
+) -> List[Dict[str, object]]:
+    if not bands:
+        return []
+
+    series_entries = normalize_series(series)
+    windows: List[Dict[str, object]] = []
+    for band in bands:
+        if band.get("level") != level:
+            continue
+
+        raw_start = band.get("start")
+        raw_end = band.get("end")
+        if not raw_start or not raw_end:
+            continue
+
+        try:
+            start = datetime.fromisoformat(str(raw_start))
+            end = datetime.fromisoformat(str(raw_end))
+        except Exception:
+            continue
+
+        if end <= start:
+            continue
+
+        total_sum, avg, min_samples, points = compute_range_metrics(series_entries, start, end)
+        windows.append(
+            {
+                "start": start.isoformat(),
+                "end": end.isoformat(),
+                "startHour": start.hour,
+                "endHour": end.hour,
+                "windowHours": round((end - start).total_seconds() / 3600.0, 2),
+                "expectedTotal": total_sum,
+                "expectedAvg": avg,
+                "sampleCountMin": min_samples,
+                "windowPoints": points,
+            }
+        )
+
+    return windows
 
 
 def build_forecast():
@@ -1862,9 +2054,17 @@ def build_forecast():
 
     for facility_id, facility in FACILITIES.items():
         weekly_forecast = []
+        facility_loc_ids = sorted(
+            {
+                loc_id
+                for category in facility["categories"]
+                for loc_id in category["location_ids"]
+            }
+        )
 
         for day_date in week_dates:
             targets = get_targets_for_date(day_date)
+            window_targets = get_window_targets_for_date(day_date)
             day_weather = build_weather_hours_for_targets(targets, weather_series)
             day_weather_summary = build_weather_day_summary(day_weather)
             day_categories = []
@@ -1901,10 +2101,10 @@ def build_forecast():
                     }
                 )
 
-            totals_day = build_total_series_from_categories(
-                day_categories=day_categories,
-                targets=targets,
-                now=now,
+            totals_day = build_total_series_for_targets(
+                loc_ids=facility_loc_ids,
+                targets=window_targets,
+                ctx=ctx,
             )
 
             avoid_windows_day, best_windows_day = find_peak_and_low_windows(
@@ -1913,6 +2113,13 @@ def build_forecast():
             )
             avoid_windows_day = merge_windows_with_series(avoid_windows_day, totals_day)
             best_windows_day = merge_windows_with_series(best_windows_day, totals_day)
+            crowd_bands_day = build_crowd_bands(
+                totals_day,
+                low_windows=best_windows_day,
+                peak_windows=avoid_windows_day,
+            )
+            best_windows_day = build_windows_from_bands(crowd_bands_day, "low", totals_day)
+            avoid_windows_day = build_windows_from_bands(crowd_bands_day, "peak", totals_day)
 
             weekly_forecast.append(
                 {
@@ -1923,6 +2130,7 @@ def build_forecast():
                     "categories": day_categories,
                     "avoidWindows": avoid_windows_day,
                     "bestWindows": best_windows_day,
+                    "crowdBands": crowd_bands_day,
                 }
             )
 

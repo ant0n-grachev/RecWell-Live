@@ -9,6 +9,12 @@ export interface ForecastWindow {
     sampleCountMin?: number;
 }
 
+export interface ForecastBand {
+    start: string;
+    end: string;
+    level: "low" | "medium" | "peak";
+}
+
 export interface ForecastHour {
     hourStart: string;
     expectedCount: number;
@@ -28,6 +34,7 @@ export interface ForecastDay {
     categories?: ForecastCategoryDay[];
     avoidWindows?: ForecastWindow[];
     bestWindows?: ForecastWindow[];
+    crowdBands?: ForecastBand[];
 }
 
 export interface FacilityForecastResponse {
