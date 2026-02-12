@@ -23,17 +23,18 @@ const formatTime = (value?: string): string => {
     if (!value) return "N/A";
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) return "N/A";
-    return parsed.toLocaleTimeString([], {
+    const formatted = parsed.toLocaleTimeString([], {
         timeZone: CHICAGO_TIMEZONE,
         hour: "numeric",
         minute: "2-digit",
     });
+    return formatted.replace(/\s([AP]M)$/i, "$1");
 };
 
 const formatRange = (start?: string, end?: string): string => {
     const formattedStart = formatTime(start);
     const formattedEnd = formatTime(end);
-    return `${formattedStart}-${formattedEnd}`;
+    return `${formattedStart} – ${formattedEnd}`;
 };
 
 const BAND_STYLES: Record<ForecastBand["level"], {label: string; color: string; bg: string}> = {
@@ -120,7 +121,7 @@ const renderBands = (bands: ForecastBand[]) => {
 const formatWindow = (window: {start?: string; end?: string}): string => {
     const start = formatTime(window.start);
     const end = formatTime(window.end);
-    return `${start}-${end}`;
+    return `${start} – ${end}`;
 };
 
 export default function ForecastWindowsCard({
