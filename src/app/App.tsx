@@ -390,7 +390,7 @@ export default function App() {
                 {data && (
                     <>
                         <OccupancyCard
-                            title="Total Occupancy"
+                            title="Live Occupancy"
                             total={total}
                             max={max}
                             lastUpdated={lastUpdated}

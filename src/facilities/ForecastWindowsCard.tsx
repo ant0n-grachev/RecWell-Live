@@ -1,4 +1,4 @@
-import {useMemo, useState} from "react";
+import {useEffect, useMemo, useState} from "react";
 import {Alert, Box, Button, CircularProgress, IconButton, Stack, Typography} from "@mui/material";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
@@ -66,7 +66,15 @@ const sortBands = (bands: CrowdBand[]): CrowdBand[] =>
             if (Number.isNaN(right)) return -1;
             return left - right;
         });
-const renderBands = (bands: CrowdBand[]) => {
+
+const isCurrentBand = (band: CrowdBand, nowTs: number): boolean => {
+    const startTs = Date.parse(band.start || "");
+    const endTs = Date.parse(band.end || "");
+    if (Number.isNaN(startTs) || Number.isNaN(endTs)) return false;
+    return nowTs >= startTs && nowTs < endTs;
+};
+
+const renderBands = (bands: CrowdBand[], nowTs: number) => {
     const sorted = sortBands(bands);
 
     if (sorted.length === 0) {
@@ -81,6 +89,7 @@ const renderBands = (bands: CrowdBand[]) => {
         <Stack spacing={0.8}>
             {sorted.map((band, index) => {
                 const style = BAND_STYLES[band.level] ?? BAND_STYLES.medium;
+                const isCurrent = isCurrentBand(band, nowTs);
                 return (
                     <Box
                         key={`${band.start}-${band.end}-${index}`}
@@ -88,7 +97,8 @@ const renderBands = (bands: CrowdBand[]) => {
                             p: 1,
                             borderRadius: 1.5,
                             border: "1px solid",
-                            borderColor: "divider",
+                            borderColor: isCurrent ? "text.primary" : "divider",
+                            boxShadow: isCurrent ? "0 0 0 2px rgba(0, 0, 0, 0.08)" : "none",
                             bgcolor: "background.default",
                             display: "flex",
                             alignItems: "center",
@@ -140,6 +150,14 @@ export default function ForecastWindowsCard({
     error,
 }: Props) {
     const [selectedLevels, setSelectedLevels] = useState<CrowdBandLevel[]>([]);
+    const [nowTs, setNowTs] = useState<number>(() => Date.now());
+
+    useEffect(() => {
+        const timerId = window.setInterval(() => {
+            setNowTs(Date.now());
+        }, 30000);
+        return () => window.clearInterval(timerId);
+    }, []);
 
     const toggleLevel = (level: CrowdBandLevel) => {
         setSelectedLevels((prev) => (
@@ -249,7 +267,7 @@ export default function ForecastWindowsCard({
                                     );
                                 })}
                             </Stack>
-                            {renderBands(displayBands)}
+                            {renderBands(displayBands, nowTs)}
                         </>
                     ) : (
                         <Stack spacing={0.5}>
