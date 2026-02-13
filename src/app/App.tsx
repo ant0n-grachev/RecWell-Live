@@ -434,25 +434,34 @@ export default function App() {
                 )}
 
                 <Box component="footer" sx={{py: 2}}>
-                    <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="center">
-                        <Typography color="text.secondary" sx={{fontSize: "0.85rem"}}>
-                            Built by{" "}
-                            <Link href="https://anton.grachev.us" target="_blank" rel="noopener noreferrer" underline="hover">
-                                Anton
-                            </Link>
-                        </Typography>
-                        <Tooltip title="Source code">
-                            <IconButton
-                                size="small"
-                                component="a"
-                                href="https://github.com/ant0n-grachev/RecWell-Live"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                aria-label="View source code on GitHub"
-                            >
-                                <GitHubIcon fontSize="small"/>
-                            </IconButton>
-                        </Tooltip>
+                    <Stack spacing={1} alignItems="center" justifyContent="center">
+                        <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="center">
+                            <Typography color="text.secondary" sx={{fontSize: "0.85rem"}}>
+                                Built by{" "}
+                                <Link href="https://anton.grachev.us" target="_blank" rel="noopener noreferrer" underline="hover">
+                                    Anton
+                                </Link>
+                            </Typography>
+                            <Tooltip title="Source code">
+                                <IconButton
+                                    size="small"
+                                    component="a"
+                                    href="https://github.com/ant0n-grachev/RecWell-Live"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    aria-label="View source code on GitHub"
+                                >
+                                    <GitHubIcon fontSize="small"/>
+                                </IconButton>
+                            </Tooltip>
+                        </Stack>
+
+                        <Box
+                            component="img"
+                            src="https://api.netlify.com/api/v1/badges/d0d6bc80-46d8-402f-bcc3-7047df4d4b52/deploy-status"
+                            alt="Netlify Status"
+                            sx={{display: "block"}}
+                        />
                     </Stack>
                 </Box>
             </Container>
