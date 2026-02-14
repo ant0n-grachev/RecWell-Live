@@ -398,20 +398,22 @@ export default function App() {
                             isLoading={isLoading}
                         />
 
-                        <ForecastWindowsCard
-                            day={selectedForecastDay}
-                            dayOffset={forecastDayOffset}
-                            canPrev={forecastDayOffset > 0}
-                            canNext={forecastDayOffset < Math.min(3, visibleForecastDays.length - 1)}
-                            onPrev={() => setForecastDayOffset((prev) => Math.max(0, prev - 1))}
-                            onNext={() =>
-                                setForecastDayOffset((prev) =>
-                                    Math.min(Math.min(3, visibleForecastDays.length - 1), prev + 1)
-                                )
-                            }
-                            isLoading={isForecastLoading}
-                            error={forecastError}
-                        />
+                        {!showStaleNotice && (
+                            <ForecastWindowsCard
+                                day={selectedForecastDay}
+                                dayOffset={forecastDayOffset}
+                                canPrev={forecastDayOffset > 0}
+                                canNext={forecastDayOffset < Math.min(3, visibleForecastDays.length - 1)}
+                                onPrev={() => setForecastDayOffset((prev) => Math.max(0, prev - 1))}
+                                onNext={() =>
+                                    setForecastDayOffset((prev) =>
+                                        Math.min(Math.min(3, visibleForecastDays.length - 1), prev + 1)
+                                    )
+                                }
+                                isLoading={isForecastLoading}
+                                error={forecastError}
+                            />
+                        )}
 
                         {freshness === "cached" && (
                             <Alert severity="info" variant="outlined" sx={{borderRadius: 2}}>
