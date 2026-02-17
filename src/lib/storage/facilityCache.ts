@@ -1,6 +1,6 @@
 import type {FacilityId, FacilityPayload} from "../types/facility";
 
-export const CACHE_KEY = "recwell:facilityCache";
+export const CACHE_KEY = "reclive:facilityCache";
 export const CACHE_VERSION = 1;
 
 type CacheEntry = {

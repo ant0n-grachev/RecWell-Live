@@ -17,7 +17,7 @@ import OccupancyCard from "../facilities/OccupancyCard";
 import SectionSummary from "../facilities/SectionSummary";
 import SectionSummaryOther from "../facilities/SectionSummaryOther";
 import ForecastWindowsCard from "../facilities/ForecastWindowsCard";
-import {fetchFacility} from "../lib/api/recwellParser";
+import {fetchFacility} from "../lib/api/facilityParser";
 import {fetchForecastDays} from "../lib/api/forecastParser";
 import {
     FACILITY_DASHBOARD_CONFIG,
@@ -30,7 +30,7 @@ import {getFacilityCache, setFacilityCache} from "../lib/storage/facilityCache";
 import type {FacilityId, FacilityPayload} from "../lib/types/facility";
 import type {ForecastDay, ForecastHour} from "../lib/types/forecast";
 
-const FACILITY_STORAGE_KEY = "recwell:selectedFacility";
+const FACILITY_STORAGE_KEY = "reclive:selectedFacility";
 const AUTO_REFRESH_INTERVAL_MS = 15 * 60 * 1000;
 const AUTO_REFRESH_CHECK_INTERVAL_MS = 60 * 1000;
 const MANUAL_REFRESH_COOLDOWN_MS = 3000;
@@ -448,7 +448,7 @@ export default function App() {
                                 <IconButton
                                     size="small"
                                     component="a"
-                                    href="https://github.com/ant0n-grachev/RecWell-Live"
+                                    href="https://github.com/ant0n-grachev/RecLive"
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     aria-label="View source code on GitHub"

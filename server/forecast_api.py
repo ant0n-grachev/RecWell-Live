@@ -47,7 +47,7 @@ def generated_age_seconds(payload: Dict[str, Any]) -> Optional[int]:
         return None
 
 
-app = FastAPI(title="RecWell Forecast API", version="1.1.0")
+app = FastAPI(title="RecLive Forecast API", version="1.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=parse_allowed_origins(),

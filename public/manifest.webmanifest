@@ -1,6 +1,6 @@
 {
-  "name": "RecWell Live",
-  "short_name": "RecWell Live",
+  "name": "RecLive",
+  "short_name": "RecLive",
   "description": "Live occupancy for UW RecWell facilities.",
   "start_url": ".",
   "display": "standalone",
